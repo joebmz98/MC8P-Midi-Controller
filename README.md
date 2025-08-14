@@ -1,1 +1,1 @@
-# MC8P-Midi-Controller
+# MC8P Standalone MIDI Controller
