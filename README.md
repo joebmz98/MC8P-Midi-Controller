@@ -23,17 +23,17 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 ---
  
 ## **Bill of Materials (BOM)**  
-| Component | Qty | Notes | Links |
-|-----------|-----|-------|  
-| Teensy 4.0 | 1 | Main microcontroller | https://thepihut.com/products/pjrc-teensy-4-0-usb-development-board (UK) |
-| SSD1306 OLED (128x64) | 1 | I²C interface | https://www.aliexpress.com/item/1005005941908229.html |
-| B100K Vertical Potentiometer | 8 | Linear taper  | e.g. https://shorturl.at/ZGaz2 |
-| 3.5mm Stereo Socket (PJ307) | 1 | MIDI TRS Type A | e.g. https://shorturl.at/lp2T3 |  
-| Cherry MX Switches | 4 | For menu navigation |  |
-| 10nF Ceramic Capacitors | 8 | Potentiometer filtering |  |
-| 10k Resistors | 4 | Pull-up/down for buttons |  |
-| 220Ω Resistors | 2 | OLED protection |  |
- 
+
+| Component                  | Qty | Notes                          | Links |
+|----------------------------|-----|--------------------------------|-------|
+| Teensy 4.0                 | 1   | Main microcontroller           | [The Pi Hut (UK)](https://thepihut.com/products/pjrc-teensy-4-0-usb-development-board) |
+| SSD1306 OLED (128×64)      | 1   | I²C interface                  | [AliExpress](https://www.aliexpress.com/item/1005005941908229.html) |
+| B100K Vertical Potentiometer | 8  | Linear taper                   | [Example](https://shorturl.at/ZGaz2) |
+| 3.5mm Stereo Socket (PJ307) | 1  | MIDI TRS Type A                | [Example](https://shorturl.at/lp2T3) |
+| Cherry MX Switches         | 4   | For menu navigation            | —     |
+| 10nF Ceramic Capacitors    | 8   | Potentiometer filtering        | —     |
+| 10k Resistors              | 4   | Pull-up/down for buttons       | —     |
+| 220Ω Resistors             | 2   | OLED protection                | —     | 
 ---
  
 ## **Available Purchase Options**  
