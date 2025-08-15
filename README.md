@@ -13,7 +13,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 ## **Features**  
 - **8x B100K Pots** with smooth analog control  
 - **Teensy 4.0** for fast, reliable MIDI   
-- **SSD1306 I2C OLED (128x64)** for UI  
+- **SSD1306 I2C OLED (128x64)** for the UI  
 - **Per-Pot CC Assignment** – Each pot can send **10 different MIDI CCs**  
 - **3.5mm MIDI TRS Out** (PJ307 socket for Type A MIDI)  
 - **4x Cherry MX Switches** for UI navigation/configuration  
@@ -72,7 +72,7 @@ Each potentiometer can be assigned **10 different MIDI CCs** via the interface:
 
 **Parameter Reset** → Hold NEXT + PREV (5 sec) to restore defaults (*Ch 1–8, CC7 [OP-XY Track Volume]*). This does not save the parameter reset to the EEPROM. 
 
-## **Owner's Manual:** https://docs.google.com/document/d/1LK1hT5nvRXzgEnc-npS-HN6GpmSG35B1l2-KNDyIfV0/edit?usp=sharing 
+**Owner's Manual:** https://docs.google.com/document/d/1LK1hT5nvRXzgEnc-npS-HN6GpmSG35B1l2-KNDyIfV0/edit?usp=sharing 
  
 ---
  
