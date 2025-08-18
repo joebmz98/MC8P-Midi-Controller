@@ -5,6 +5,10 @@
 # **8-Pot Standalone MIDI Controller (Teensy 4.0)**  
  
 A customizable, open-source MIDI controller with **8 potentiometers**, each supporting **Up to 10 assignable MIDI CCs per Potentiometer**, built around the **Teensy 4.0** for high-performance MIDI control.  
+
+
+!MC8P Render
+
  
 ✅ **Pre-Assembled** | ✅**DIY Kit** (excl. Teensy 4.0) | ✅ **PCB Only**  
  
