@@ -37,7 +37,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 | Cherry MX Switches         | 4   | For menu navigation            | —     |
 | 10nF Ceramic Capacitors    | 8   | Potentiometer filtering        | —     |
 | 10k Resistors              | 4   | Pull-up/down for buttons       | —     |
-| 220Ω Resistors             | 2   | OLED protection                | —     | 
+| 220Ω Resistors             | 2   | For MIDI Circuitry                | —     | 
 ---
  
 ## **Available Purchase Options**  
