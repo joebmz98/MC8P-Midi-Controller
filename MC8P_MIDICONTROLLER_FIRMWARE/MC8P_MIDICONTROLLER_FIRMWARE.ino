@@ -4,7 +4,7 @@
 // firmware version 1.0  //
 // ********************* //
 // controller by         //
-// instruments.axs       //
+// .axs instruments       //
 // ********************* //
 
 #include <Adafruit_SSD1306.h>
