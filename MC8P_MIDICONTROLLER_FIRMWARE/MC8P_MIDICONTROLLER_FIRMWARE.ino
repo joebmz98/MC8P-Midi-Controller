@@ -3,9 +3,14 @@
 // MC8P Standalone       //
 // MIDI Controller       //
 // firmware version 1.1  //
+// Hardware Version: 1.0 // 
 // ********************* //
 // controller by         //
 // .axs instruments      //
+// ********************* //
+// Description: 8-potentiometer MIDI controller with
+//              programmable CC assignments and
+//              multi-message per pot support.
 // ********************* //
 
 // ********************* //
