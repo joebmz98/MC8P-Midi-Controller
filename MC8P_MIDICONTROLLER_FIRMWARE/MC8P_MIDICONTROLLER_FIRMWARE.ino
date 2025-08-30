@@ -2,17 +2,44 @@
 // ********************* //
 // MC8P Standalone       //
 // MIDI Controller       //
-// firmware version 1.0  //
+// firmware version 1.1  //
 // ********************* //
 // controller by         //
-// .axs instruments       //
+// .axs instruments      //
 // ********************* //
 
+// ********************* //
+// LICENSE & COPYRIGHT
+//
+// This project is released under the MIT License.
+// Copyright (c) 2024 .axs instruments
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// ********************* //
+
+// LIBRARIES
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_GFX.h>
 #include <MIDI.h>
 #include <ResponsiveAnalogRead.h>
 #include <Fonts/Picopixel.h>
+
 // FLASH
 #include <EEPROM.h>
 #define EEPROM_ADDR 0            // Starting address in EEPROM
@@ -42,7 +69,7 @@ const char* BUTTON_NAMES[NUM_BUTTONS] = { "ASSIGN", "ENTER", "PREV", "NEXT" };
 int buttonState[NUM_BUTTONS] = { 0 };
 int lastButtonState[NUM_BUTTONS] = { 0 };
 unsigned long lastDebounceTime[NUM_BUTTONS] = { 0 };
-const unsigned long debounceDelay = 10;
+const unsigned long debounceDelay = 15;
 
 // SCREEN STATE MANAGEMENT
 enum ScreenState { MAIN_SCREEN,
