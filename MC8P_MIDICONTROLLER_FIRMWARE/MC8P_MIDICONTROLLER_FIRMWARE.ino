@@ -941,7 +941,7 @@ void initController() {
   // FIRMWARE VERSION
   display.setTextSize(1);
   display.setCursor(58, 55);
-  display.print("v1.0");
+  display.print("v1.1");
 
   // DISPLAY
   display.display();
