@@ -34,7 +34,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 | 3.5mm Stereo Socket (PJ307) | 1  | MIDI TRS Type A                | [Example](https://shorturl.at/lp2T3) |
 | Kailh Switches         | 4   | For menu navigation            | —     |
 | 10nF Ceramic Capacitors    | 8   | Potentiometer filtering        | —     |
-| 10k Resistors              | 4   | Pull-up/down for buttons       | —     |
+| 10k Resistors              | 4   | Pull-down for buttons       | —     |
 | 220Ω Resistors             | 2   | For MIDI Circuitry                | —     |
 ---
 
