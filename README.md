@@ -18,7 +18,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 - **SSD1306 I2C OLED (128x64)** for the UI
 - **Per-Pot CC Assignment** – Each pot can send **10 different MIDI CCs**
 - **3.5mm MIDI TRS Out** (PJ307 socket for Type A MIDI)
-- **4x Cherry MX Switches** for UI navigation/configuration
+- **4x Kailh Switches** for UI navigation/configuration
 - **Standalone Operation** – No computer needed after setup
 - **Open-Source Firmware** (Arduino IDE-compatible)
 
