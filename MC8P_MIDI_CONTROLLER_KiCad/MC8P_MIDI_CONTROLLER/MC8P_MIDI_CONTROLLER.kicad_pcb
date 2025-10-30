@@ -10562,7 +10562,7 @@
 		(at 103 30.75 -90)
 		(descr "C, Disc series, Radial, pin pitch=5.00mm, diameter*width=5*2.5mm^2, Capacitor, http://cdn-reichelt.de/documents/datenblatt/B300/DS_KERKO_TC.pdf")
 		(tags "C Disc series Radial pin pitch 5.00mm diameter 5mm width 2.5mm Capacitor")
-		(property "Reference" "C12"
+		(property "Reference" "C10"
 			(at 2.5 -2.5 90)
 			(layer "F.SilkS")
 			(uuid "e6c37fcb-9cff-4151-91a2-b77760f061a4")
@@ -13140,7 +13140,7 @@
 		(at 108.5 33.75 -90)
 		(descr "CP, Radial series, Radial, pin pitch=1.50mm, diameter=4mm, height=7mm, Electrolytic Capacitor")
 		(tags "CP Radial series Radial pin pitch 1.50mm diameter 4mm height 7mm Electrolytic Capacitor")
-		(property "Reference" "C13"
+		(property "Reference" "C11"
 			(at -3 -0.5 90)
 			(layer "F.SilkS")
 			(uuid "0d965f74-adb3-490f-94f3-8ce75ee2eaac")

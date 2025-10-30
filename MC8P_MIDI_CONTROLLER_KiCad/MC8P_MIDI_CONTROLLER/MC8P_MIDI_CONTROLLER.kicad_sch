@@ -7889,7 +7889,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "d3428dfa-5272-4d5f-bd5e-06f07a911d7f")
-		(property "Reference" "C12"
+		(property "Reference" "C10"
 			(at 232.41 109.2199 0)
 			(effects
 				(font
@@ -7943,7 +7943,7 @@
 		(instances
 			(project "MC8P_MIDI_CONTROLLER"
 				(path "/42d00d8e-48e3-47e6-b456-ac5bd2d9bc78"
-					(reference "C12")
+					(reference "C10")
 					(unit 1)
 				)
 			)
@@ -9127,7 +9127,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "f9e9b0ec-c81d-47b4-a07c-172ef71130c9")
-		(property "Reference" "C13"
+		(property "Reference" "C11"
 			(at 245.11 108.3309 0)
 			(effects
 				(font
@@ -9181,7 +9181,7 @@
 		(instances
 			(project ""
 				(path "/42d00d8e-48e3-47e6-b456-ac5bd2d9bc78"
-					(reference "C13")
+					(reference "C11")
 					(unit 1)
 				)
 			)
