@@ -32,7 +32,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 | SSD1306 OLED (128×64)      | 1   | I²C interface                  | [AliExpress](https://www.aliexpress.com/item/1005006997755041.html?spm=a2g0o.productlist.main.3.72ce505bpJGYTv&algo_pvid=bc0c76f6-3994-464f-bd3a-739d8399cc54&algo_exp_id=bc0c76f6-3994-464f-bd3a-739d8399cc54-2&pdp_ext_f=%7B%22order%22%3A%224550%22%2C%22eval%22%3A%221%22%2C%22orig_sl_item_id%22%3A%221005006997755041%22%2C%22orig_item_id%22%3A%221005009692635715%22%7D&pdp_npi=6%40dis%21GBP%214.12%212.06%21%21%2138.45%2119.22%21%40211b80c217564731372107813e3087%2112000038992461230%21sea%21UK%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A3a2acf07%3Bm03_new_user%3A-29895&curPageLogUid=v6v7cw4jYB1x&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005006997755041%7C_p_origin_prod%3A1005009692635715) |
 | B100K Vertical Potentiometer | 8  | Linear taper                   | [Example](https://shorturl.at/ZGaz2) |
 | 3.5mm Stereo Socket (PJ307) | 1  | MIDI TRS Type A                | [Example](https://shorturl.at/lp2T3) |
-| Cherry MX Switches         | 4   | For menu navigation            | —     |
+| Kailh Switches         | 4   | For menu navigation            | —     |
 | 10nF Ceramic Capacitors    | 8   | Potentiometer filtering        | —     |
 | 10k Resistors              | 4   | Pull-up/down for buttons       | —     |
 | 220Ω Resistors             | 2   | For MIDI Circuitry                | —     |
