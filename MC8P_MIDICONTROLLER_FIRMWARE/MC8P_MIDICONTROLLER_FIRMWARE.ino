@@ -44,6 +44,9 @@
 #include <ResponsiveAnalogRead.h>
 #include <Fonts/Picopixel.h>
 
+// USB NAME
+#include <usb_names.h>
+
 // FLASH
 #include <EEPROM.h>
 #define EEPROM_ADDR 0            // Starting address in EEPROM
