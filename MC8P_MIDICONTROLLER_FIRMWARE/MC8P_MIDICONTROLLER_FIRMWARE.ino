@@ -1,7 +1,7 @@
 // ********************* //
 // MC8P Standalone       //
 // MIDI Controller       //
-// firmware version 1.2  //
+// firmware version 1.3  //
 // Hardware Version: 1.0 // 
 // ********************* //
 // controller by         //
@@ -65,6 +65,9 @@ struct MidiMessage {
   byte cc;
   int value;
 };
+
+// FIRMWARE VERSION
+const char* FIRMWARE_VERSION = "1.3";
 
 // BUTTON CONFIG
 const int NUM_BUTTONS = 4;
@@ -1042,7 +1045,7 @@ void drawAssignScreen() {
   display.print("MIDI ASSIGN");
 
   // DISPLAY CURRENTLY SELECTED POTENTIOMETER
-  display.setCursor(75, 12);
+  display.setCursor(77, 12);
   display.print("Pot ");
   display.print(selectedPot + 1);  // DISPLAYS 1-8
 
@@ -1191,10 +1194,11 @@ void initController() {
   display.setFont(&Picopixel);
   display.setCursor(29, 26);
   display.print("M C 8 P");
-  // FIRMWARE VERSION - UPDATED TO v1.2
+  // FIRMWARE VERSION 
   display.setTextSize(1);
   display.setCursor(58, 55);
-  display.print("v1.2");
+  display.print("v");
+  display.print(FIRMWARE_VERSION);
 
   // DISPLAY
   display.display();

@@ -1,6 +1,6 @@
 // ********************* //
 // MC8P midiController   //
-// firmware version 1.0  //
+// firmware version 1.3  //
 // ********************* //
 // controller by         //
 // instruments.axs       //
@@ -23,9 +23,9 @@
 #define PRODUCT_NAME        {'M','C','8','P',' ','M','I','D','I',' ','C','o','n','t','r','o','l','l','e','r'}
 #define PRODUCT_NAME_LEN    20
 
-// Updated manufacturer name: "instruments.axs" (14 characters)
-#define MANUFACTURER_NAME   {'i','n','s','t','r','u','m','e','n','t','s','.','a','x','s'}
-#define MANUFACTURER_NAME_LEN 15
+// Updated manufacturer name: "instruments.axs" (16 characters)
+#define MANUFACTURER_NAME   {'.','a','x','s',' ','i','n','s','t','r','u','m','e','n','t','s',}
+#define MANUFACTURER_NAME_LEN 16
 
 PROGMEM extern struct usb_string_descriptor_struct usb_string_manufacturer_name = {
     2 + MANUFACTURER_NAME_LEN * 2,  // Descriptor size (header + Unicode string)
