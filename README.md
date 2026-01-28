@@ -66,15 +66,27 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 ---
 
 ## **Configuration**
+
+### **Performance Mode**
+- The default screen shows real-time MIDI CC values for each potentiometer
+- **Enter ASSIGN Mode** → Hold ASSIGN button for 2 seconds
+
+### **TEMP Mode**
+- **Activation**: While in PERFORMANCE Mode, press and hold the **ENTER** button
+- **Function**: While holding ENTER, freely adjust any potentiometer to send temporary MIDI values
+- **Release**: When you release ENTER, all pot values instantly return to their positions before pressing ENTER
+- **Use Case**: Perfect for creating temporary effects, build-ups, or transitions without losing your original settings
+- **Note**: Physical knobs will "catch up" to their original positions after ENTER is released
+
+### **ASSIGN Mode**
 Each potentiometer can be assigned **10 different MIDI CCs** via the interface:
-1. **Enter ASSIGN Mode** → Hold ASSIGN Button in performance mode.
-2. **Select Pot** → Hold ASSIGN + press NEXT/PREV to jump between potentiometers.
-4. **Toggle Parameter** → Press ASSIGN to toggle between editing MIDI Channel or CC Number
-5. **Edit value of MIDI Channel/CC Number** → Press NEXT/PREV to increment/decrement the selected value.
-6. **ADD new CC to Potentiometer** → Hold ENTER + NEXT (2 sec) to create a blank CC (default: Ch 1, CC1). Limit: 10 CCs per pot (to avoid visual clutter).
-7. **Switch between CC Messages** → Hold ENTER + press NEXT/PREV to cycle through CCs on the current pot.
-8. **DELETE CC from Potentiometer** → Hold ENTER + PREV (2 sec) to remove the selected CC.
-9. **Save & Exit** → Hold ASSIGN + ENTER (2 sec) to save to EEPROM and return to PERFORMANCE Mode.
+1. **Select Pot** → Hold ASSIGN + press NEXT/PREV to jump between potentiometers
+2. **Toggle Parameter** → Press ASSIGN to toggle between editing MIDI Channel or CC Number
+3. **Edit value of MIDI Channel/CC Number** → Press NEXT/PREV to increment/decrement the selected value
+4. **ADD new CC to Potentiometer** → Hold ENTER + NEXT (2 sec) to create a blank CC (default: Ch 1, CC1). Limit: 10 CCs per pot
+5. **Switch between CC Messages** → Hold ENTER + press NEXT/PREV to cycle through CCs on the current pot
+6. **DELETE CC from Potentiometer** → Hold ENTER + PREV (2 sec) to remove the selected CC
+7. **Save & Exit** → Hold ASSIGN + ENTER (2 sec) to save to EEPROM and return to PERFORMANCE Mode
 
 **Parameter Reset** → Hold NEXT + PREV (5 sec) to restore defaults (*Ch 1–8, CC7 [OP-XY Track Volume]*). This does not save the parameter reset to the EEPROM.
 
@@ -106,7 +118,7 @@ Each potentiometer can be assigned **10 different MIDI CCs** via the interface:
 
 ## **Support & Contributions**
 - **Issues:** Open a GitHub ticket
-- **Custom Requests:** DM on [Twitter/email/etc.]
+- **Custom Requests:** Send me an E-mail! djaxiisuk@gmail.com
 - **Want to improve it?** PRs welcome!
 
 ---
