@@ -45,7 +45,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 ## **Available Purchase Options**
 1. **Pre-Assembled Unit** – Fully built & tested → *Not currently available*
 2. **Full DIY Kit** – All components + PCB, unassembled - No Teensy 4.0 Provided → *Not currently available*
-3. **PCB Only** – For custom builds → []
+3. **PCB Only** – For custom builds → [**Purchase on eBay UK**](https://www.ebay.co.uk/itm/406664891089)
 
 ---
 
