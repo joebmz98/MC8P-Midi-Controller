@@ -6,7 +6,7 @@
 
 A customizable, open-source MIDI controller with **8 potentiometers**, each supporting **Up to 10 assignable MIDI CCs per Potentiometer**, built around the **Teensy 4.0** for high-performance MIDI control.
 
-<img src="https://github.com/joebmz98/MC8P-Midi-Controller/raw/main/MC8P_MIDI_CONTROLLERS_MEDIA/PHOTOS/P1155438.jpg" alt="Photo of the assembled MC8P MIDI Controller" width="600"/>
+<img src="https://github.com/joebmz98/MC8P-Midi-Controller/raw/main/MC8P_MIDI_CONTROLLERS_MEDIA/PHOTOS/P1155438.JPG" alt="Photo of the assembled MC8P MIDI Controller" width="600"/>
 
 ❌ **Pre-Assembled** | ❌ **DIY Kit** (excl. Teensy 4.0) | ✅ **PCB Only**
 
