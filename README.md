@@ -8,7 +8,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 
 <img src="https://github.com/joebmz98/MC8P-Midi-Controller/raw/main/MC8P_MIDI_CONTROLLERS_MEDIA/PHOTOS/20250831_110309.jpg" alt="Photo of the assembled MC8P MIDI Controller" width="600"/>
 
-❌ **Pre-Assembled** | ❌ **DIY Kit** (excl. Teensy 4.0) | ❌ **PCB Only**
+❌ **Pre-Assembled** | ❌ **DIY Kit** (excl. Teensy 4.0) | ✅ **PCB Only**
 
 ---
 
