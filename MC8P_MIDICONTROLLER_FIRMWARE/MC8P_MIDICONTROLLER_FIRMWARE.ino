@@ -79,7 +79,7 @@ const char* BUTTON_NAMES[NUM_BUTTONS] = { "ASSIGN", "ENTER", "PREV", "NEXT" };
 int buttonState[NUM_BUTTONS] = { 0 };
 int lastButtonState[NUM_BUTTONS] = { 0 };
 unsigned long lastDebounceTime[NUM_BUTTONS] = { 0 };
-const unsigned long debounceDelay = 15;
+const unsigned long debounceDelay = 15; // BUTTON DEBOUNCE 
 
 // SCREEN STATE MANAGEMENT
 enum ScreenState { MAIN_SCREEN,
