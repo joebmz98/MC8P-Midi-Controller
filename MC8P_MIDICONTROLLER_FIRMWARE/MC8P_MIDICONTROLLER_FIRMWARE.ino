@@ -454,7 +454,7 @@ void loop() {
     drawClearStates();
   } else if (currentScreen == CONFIRM_SAVE_SCREEN) {
     drawConfirmSavePopup();
-  } else if (currentScreen == CONFIRM_ASSIGN_SAVE_SCREEN) {  // Add this
+  } else if (currentScreen == CONFIRM_ASSIGN_SAVE_SCREEN) {
     drawConfirmAssignSavePopup();
   }
 }
@@ -467,11 +467,6 @@ void readButtons() {
   // TRACK BUTTONS HELD
   assignButtonHeld = (buttonState[0] == HIGH);
   enterButtonHeld = (buttonState[1] == HIGH);
-
-  // Ensure selectedMenuItem is valid for current screen
-  if (currentScreen == DISPLAY_SETTINGS_SCREEN && !editingDisplaySetting) {
-    selectedMenuItem = 0;  // Force to 0 when not in edit mode
-  }
 
   // TRACKING ADD/REMOVE OPERATION
   static bool inAddRemoveOperation = false;
@@ -659,14 +654,7 @@ void readButtons() {
                     } else {
                       // Exit edit mode and save setting
                       editingDisplaySetting = false;
-                      // Apply the invert setting
-                      if (displayInverted) {
-                        display.invertDisplay(true);
-                        Serial.println("ENTER pressed - Display invert set to: YES and SAVED");
-                      } else {
-                        display.invertDisplay(false);
-                        Serial.println("ENTER pressed - Display invert set to: NO and SAVED");
-                      }
+                      Serial.println("ENTER pressed - Display invert setting saved");
                       // Save to EEPROM
                       saveSettingsToEEPROM();
                     }
@@ -744,15 +732,10 @@ void readButtons() {
                   // Also save to main EEPROM settings
                   saveSettingsToEEPROM();
 
-                  // Visual feedback - brief display inversion
+                  // Visual feedback - brief display flash
                   display.invertDisplay(true);
                   delay(100);
-                  // Restore to the saved display setting
-                  if (displayInverted) {
-                    display.invertDisplay(true);
-                  } else {
-                    display.invertDisplay(false);
-                  }
+                  display.invertDisplay(false);
 
                   // Return to MAIN_SCREEN after successful save
                   currentScreen = MAIN_SCREEN;
@@ -830,13 +813,24 @@ void readButtons() {
                 Serial.println(displayInverted ? "YES" : "NO");
 
                 if (editingDisplaySetting) {
-                  // In edit mode - toggle between Y and N
+                  // Force selectedMenuItem to 0 so the logic stays on this line
+                  selectedMenuItem = 0;
+
+                  // Toggle the actual boolean that moves the box
+                  bool oldValue = displayInverted;
                   displayInverted = !displayInverted;
-                  Serial.print("PREV toggled displayInverted to: ");
+
+                  Serial.print("PREV toggled displayInverted from ");
+                  Serial.print(oldValue ? "YES" : "NO");
+                  Serial.print(" to ");
                   Serial.println(displayInverted ? "YES" : "NO");
                 } else {
-                  // Not in edit mode - there's only one option, so do nothing
-                  Serial.println("Display settings selection: Invert Display Y/N (only option)");
+                  // Not in edit mode - pressing PREV should enter edit mode
+                  editingDisplaySetting = true;
+                  selectedMenuItem = 0;
+                  editFlashTimer = millis();
+                  flashState = true;
+                  Serial.println("PREV pressed - entering edit mode");
                 }
               }
 
@@ -964,19 +958,22 @@ void readButtons() {
               // DISPLAY SETTINGS SCREEN NAVIGATION
               // *********************** //
               else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
-                Serial.print("NEXT on DISPLAY_SETTINGS_SCREEN, editingDisplaySetting=");
-                Serial.print(editingDisplaySetting);
-                Serial.print(", current displayInverted=");
-                Serial.println(displayInverted ? "YES" : "NO");
-
                 if (editingDisplaySetting) {
-                  // In edit mode - toggle between Y and N
+                  // Force selectedMenuItem to 0 so the logic stays on this line
+                  selectedMenuItem = 0;
+
+                  // Toggle the actual boolean that moves the box
                   displayInverted = !displayInverted;
+
                   Serial.print("NEXT toggled displayInverted to: ");
                   Serial.println(displayInverted ? "YES" : "NO");
                 } else {
-                  // Not in edit mode - there's only one option, so do nothing
-                  Serial.println("Display settings selection: Invert Display Y/N (only option)");
+                  // If not editing, make the first press enter edit mode
+                  editingDisplaySetting = true;
+                  selectedMenuItem = 0;
+                  editFlashTimer = millis();
+                  flashState = true;
+                  Serial.println("NEXT pressed - entering edit mode");
                 }
               }
 
@@ -1232,11 +1229,14 @@ void activateTempOverride() {
     Serial.println("Temporary MIDI override ACTIVATED");
     Serial.println("All pot changes are temporary until ENTER is released");
 
-    if (displayInverted) {
-      display.invertDisplay(false);
-    } else {
+    // VISUAL FEEDBACK FOR ACTIVATING
+    if (!displayInverted) {
       display.invertDisplay(true);
+    } else {
+      display.invertDisplay(false);
     }
+
+    delay(100);  // DEBOUNCE
   }
 }
 
@@ -1275,6 +1275,7 @@ void deactivateTempOverride() {
     Serial.println("All MIDI values restored to original state");
     Serial.println("Catch-up mode activated for all pots");
 
+    // Restore to the saved display setting using the current displayInverted value
     if (displayInverted) {
       display.invertDisplay(true);
     } else {
@@ -1387,16 +1388,21 @@ void resetToDefaultSettings() {
 // DRAW MAIN_SCREEN
 // *********************** //
 void drawMainScreen() {
-  display.clearDisplay();
 
-  display.fillRect(0, 0, 128, 64, 1);  // WHITE BG
+  display.clearDisplay();  // CLEAR
+
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;   // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;  // White if inverted, Black if normal
+
+  display.fillRect(0, 0, 128, 64, bgColor);
 
   // UI
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);                             // BORDER
-  display.drawBitmap(2, 2, image_mainScreenInnerLines_bits, 124, 60, 0);  // UI INNER LINES
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
+  display.drawBitmap(2, 2, image_mainScreenInnerLines_bits, 124, 60, txtColor);
 
   // POT INFO
-  display.setTextColor(0);
+  display.setTextColor(txtColor);
   display.setTextWrap(false);
 
   // Draw all pot displays
@@ -1405,6 +1411,7 @@ void drawMainScreen() {
   }
 
   display.display();
+
 }
 
 // *********************** //
@@ -1413,6 +1420,10 @@ void drawMainScreen() {
 void drawPotDisplay(int potIndex) {
   const int maxRadius = 5;
   const PotDisplay& disp = potDisplays[potIndex];
+
+  // Set colors based on the inversion variable
+  int fgColor = displayInverted ? 1 : 0;    // Foreground color (circles, text) - opposite of bg
+  int bgColor = displayInverted ? 0 : 1;    // Background color (fill)
 
   // Determine which value to display:
   // - During temp override: show current physical value (tempMidiValues[potIndex])
@@ -1447,11 +1458,11 @@ void drawPotDisplay(int potIndex) {
 
   // DRAW EXPANDING INNER CIRCLE TO REPRESENT MIDI VALUE
   if (currentRadius > 0) {
-    display.fillCircle(disp.circleX, (disp.circleY - 1), currentRadius, 0);
+    display.fillCircle(disp.circleX, (disp.circleY - 1), currentRadius, fgColor);
   }
 
   // DRAW OUTER CIRCLES
-  display.drawCircle(disp.circleX, (disp.circleY - 1), 7, 0);
+  display.drawCircle(disp.circleX, (disp.circleY - 1), 7, fgColor);
 
   // DISPLAY MIDI VALUE
   // CENTERED BELOW THE CIRCLES
@@ -1466,6 +1477,7 @@ void drawPotDisplay(int potIndex) {
   int textX = disp.circleX - (textWidth / 2);
 
   display.setFont(NULL);
+  display.setTextColor(fgColor);
   display.setCursor(textX, (disp.textY - 1));
   display.print(valueStr);
 }
@@ -1475,14 +1487,18 @@ void drawPotDisplay(int potIndex) {
 // *********************** //
 void drawAssignScreen() {
 
-  display.clearDisplay();
+  display.clearDisplay();  // CLEAR
+
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
 
   // DRAW UI
-  display.fillRect(0, 0, 128, 64, 1);                                 // WHITE BG
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);                         // BORDER
-  display.drawBitmap(6, 4, image_assignScreenUITop_bits, 89, 13, 0);  // TOP UI
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
+  display.drawBitmap(6, 4, image_assignScreenUITop_bits, 89, 13, txtColor);
 
-  display.setTextColor(0);
+  display.setTextColor(txtColor);
   display.setTextSize(1);
   display.setTextWrap(false);
   display.setFont(&Picopixel);
@@ -1524,11 +1540,11 @@ void drawAssignScreen() {
 
       // SELECTED CONTROL MESSAGE
       if (messageIndex == selectedMessage) {
-        display.drawBitmap(60, yPos - 4, image_ctrlMessageIndicator_bits, 3, 5, 0);
+        display.drawBitmap(60, yPos - 4, image_ctrlMessageIndicator_bits, 3, 5, txtColor);
 
         // CHANNEL/CC INDICATOR
         int indicatorY = yPos + 3;
-        display.drawBitmap(valueIndicatorPos, indicatorY, image_valueIndicator_bits, 10, 1, 0);
+        display.drawBitmap(valueIndicatorPos, indicatorY, image_valueIndicator_bits, 10, 1, txtColor);
       }
     }
   }
@@ -1541,21 +1557,21 @@ void drawAssignScreen() {
 
   // SCROLL BAR - ONLY SHOW WHEN THERE ARE MORE THAN 4 MESSAGES ON THE POT
   if (messageCount[selectedPot] > MAX_VISIBLE_MESSAGES) {
-    display.drawLine(121, 20, 121, 59, 0);  // SCROLL BAR LINE
+    display.drawLine(121, 20, 121, 59, txtColor);  // SCROLL BAR LINE
 
     // CALCULATE SCROLL BAR THUMB SIZE
     int scrollBarHeight = 59 - 21;
     int thumbHeight = max(5, scrollBarHeight * MAX_VISIBLE_MESSAGES / messageCount[selectedPot]);
     int thumbPosition = 21 + (scrollOffset * (scrollBarHeight - thumbHeight) / max(1, (messageCount[selectedPot] - MAX_VISIBLE_MESSAGES)));
 
-    display.fillRoundRect(119, thumbPosition, 5, thumbHeight, 2, 0);      // BLACK
-    display.fillRect(120, (thumbPosition + 1), 3, (thumbHeight - 2), 1);  // WHITE
+    display.fillRoundRect(119, thumbPosition, 5, thumbHeight, 2, txtColor);      // BLACK
+    display.fillRect(120, (thumbPosition + 1), 3, (thumbHeight - 2), bgColor);  // Background color for inner part
   }
 
   // POT INDICATOR GRID
-  display.drawBitmap(102, 8, image_potMatrixGrid_bits, 10, 4, 0);
-  display.drawRoundRect(98, 5, 18, 10, 1, 0);
-  display.drawCircle(potCirclePositions[selectedPot].x, potCirclePositions[selectedPot].y, 1, 0);
+  display.drawBitmap(102, 8, image_potMatrixGrid_bits, 10, 4, txtColor);
+  display.drawRoundRect(98, 5, 18, 10, 1, txtColor);
+  display.drawCircle(potCirclePositions[selectedPot].x, potCirclePositions[selectedPot].y, 1, txtColor);
 
   display.display();
 }
@@ -1564,14 +1580,20 @@ void drawAssignScreen() {
 // DRAW NAVIGATION MENU    //
 // *********************** //
 void drawMenuScreen() {
-  display.clearDisplay();
+
+  display.clearDisplay();  // CLEAR
+  
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
+
   display.setFont(&Picopixel);
-  display.setTextColor(0);
-
+  
   // DRAW UI
-  display.fillRect(0, 0, 128, 64, 1);          // WHITE BG
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // BORDER
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
+  display.setTextColor(txtColor);
   display.setCursor(6, 11);
   display.println("Menu");
 
@@ -1584,9 +1606,8 @@ void drawMenuScreen() {
   display.println("- Settings");
 
   // Draw the bitmap indicator based on selection
-  // Y positions correspond to the text lines above
   int indicatorY = 21 + (selectedMenuItem * 10);
-  display.drawBitmap(55, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, 0);
+  display.drawBitmap(55, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
 
   display.display();
 }
@@ -1595,20 +1616,25 @@ void drawMenuScreen() {
 // DRAW STATES MENU        //
 // *********************** //
 void drawStatesMenuScreen() {
-  display.clearDisplay();
-  display.setFont(&Picopixel);
-  display.setTextColor(0);
 
+  display.clearDisplay();  // CLEAR
+  
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
+
+  display.setFont(&Picopixel);
+  
   // DRAW UI
-  display.fillRect(0, 0, 128, 64, 1);          // WHITE BG
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // BORDER
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
   // Title
+  display.setTextColor(txtColor);
   display.setCursor(6, 11);
   display.println("States");
 
   // Current State Indicator in top right
-  display.setTextColor(0);
   display.setCursor(67, 11);
   display.print("Current State:");
 
@@ -1631,7 +1657,7 @@ void drawStatesMenuScreen() {
 
   // Draw the bitmap indicator based on selection
   int indicatorY = 21 + (selectedMenuItem * 10);
-  display.drawBitmap(55, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, 0);
+  display.drawBitmap(55, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
 
   display.display();
 }
@@ -1640,14 +1666,20 @@ void drawStatesMenuScreen() {
 // DRAW SAVE STATES MENU   //
 // *********************** //
 void drawSaveStates() {
-  display.clearDisplay();
+  
+  display.clearDisplay(); // CLEAR
+  
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
+
   display.setFont(&Picopixel);
-  display.setTextColor(0);
-
+  
   // DRAW UI
-  display.fillRect(0, 0, 128, 64, 1);          // WHITE BG
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // BORDER
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
+  display.setTextColor(txtColor);
   display.setCursor(6, 11);
   display.println("Save State");
 
@@ -1681,11 +1713,11 @@ void drawSaveStates() {
   int indicatorWidth = 58;
   int indicatorHeight = 9;
 
-  // Draw inverted selection bar
-  display.fillRoundRect(indicatorX, indicatorY - 4, indicatorWidth, indicatorHeight, 1, 0);
+  // Draw inverted selection bar (uses opposite colors for contrast)
+  display.fillRoundRect(indicatorX, indicatorY - 4, indicatorWidth, indicatorHeight, 1, txtColor);
 
-  // Redraw the selected text in white on black background
-  display.setTextColor(1);
+  // Redraw the selected text in background color on the bar
+  display.setTextColor(bgColor);
   display.setCursor(indicatorX + 2, indicatorY + 2);
   if (col == 0) {
     display.print("State #");
@@ -1695,8 +1727,8 @@ void drawSaveStates() {
     display.print(row + 5);
   }
 
-  // Reset text color
-  display.setTextColor(0);
+  // Reset text color for other elements (though we're done)
+  display.setTextColor(txtColor);
 
   display.display();
 }
@@ -1705,14 +1737,20 @@ void drawSaveStates() {
 // DRAW LOAD STATES MENU   //
 // *********************** //
 void drawLoadStates() {
-  display.clearDisplay();
+  
+  display.clearDisplay(); // CLEAR
+  
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
+
   display.setFont(&Picopixel);
-  display.setTextColor(0);
-
+  
   // DRAW UI
-  display.fillRect(0, 0, 128, 64, 1);          // WHITE BG
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // BORDER
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
+  display.setTextColor(txtColor);
   display.setCursor(6, 11);
   display.println("Load State");
 
@@ -1746,11 +1784,11 @@ void drawLoadStates() {
   int indicatorWidth = 58;
   int indicatorHeight = 9;
 
-  // Draw inverted selection bar
-  display.fillRoundRect(indicatorX, indicatorY - 4, indicatorWidth, indicatorHeight, 1, 0);
+  // Draw inverted selection bar (uses opposite colors for contrast)
+  display.fillRoundRect(indicatorX, indicatorY - 4, indicatorWidth, indicatorHeight, 1, txtColor);
 
-  // Redraw the selected text in white on black background
-  display.setTextColor(1);
+  // Redraw the selected text in background color on the bar
+  display.setTextColor(bgColor);
   display.setCursor(indicatorX + 2, indicatorY + 2);
   if (col == 0) {
     display.print("State #");
@@ -1760,8 +1798,8 @@ void drawLoadStates() {
     display.print(row + 5);
   }
 
-  // Reset text color
-  display.setTextColor(0);
+  // Reset text color (though we're done drawing)
+  display.setTextColor(txtColor);
 
   display.display();
 }
@@ -1770,14 +1808,20 @@ void drawLoadStates() {
 // DRAW CLEAR STATES MENU   //
 // *********************** //
 void drawClearStates() {
-  display.clearDisplay();
+  
+  display.clearDisplay(); // CLEAR
+  
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
+
   display.setFont(&Picopixel);
-  display.setTextColor(0);
-
+  
   // DRAW UI
-  display.fillRect(0, 0, 128, 64, 1);          // WHITE BG
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // BORDER
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
+  display.setTextColor(txtColor);
   display.setCursor(6, 11);
   display.println("Clear State");
 
@@ -1811,11 +1855,11 @@ void drawClearStates() {
   int indicatorWidth = 58;
   int indicatorHeight = 9;
 
-  // Draw inverted selection bar
-  display.fillRoundRect(indicatorX, indicatorY - 4, indicatorWidth, indicatorHeight, 1, 0);
+  // Draw inverted selection bar (uses opposite colors for contrast)
+  display.fillRoundRect(indicatorX, indicatorY - 4, indicatorWidth, indicatorHeight, 1, txtColor);
 
-  // Redraw the selected text in white on black background
-  display.setTextColor(1);
+  // Redraw the selected text in background color on the bar
+  display.setTextColor(bgColor);
   display.setCursor(indicatorX + 2, indicatorY + 2);
   if (col == 0) {
     display.print("State #");
@@ -1825,8 +1869,8 @@ void drawClearStates() {
     display.print(row + 5);
   }
 
-  // Reset text color
-  display.setTextColor(0);
+  // Reset text color (though we're done drawing)
+  display.setTextColor(txtColor);
 
   display.display();
 }
@@ -1835,17 +1879,24 @@ void drawClearStates() {
 // DRAW CONFIRM SAVE POPUP //
 // *********************** //
 void drawConfirmSavePopup() {
-  display.clearDisplay();
+  
+  display.clearDisplay(); // CLEAR
+  
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
+  int boxColor = txtColor;
+
   display.setFont(&Picopixel);
 
-  // White background
-  display.fillRect(0, 0, 128, 64, 1);
+  // Background
+  display.fillRect(0, 0, 128, 64, bgColor);
 
   // Popup border
-  display.drawRoundRect(10, 12, 108, 40, 4, 0);  // Black Box
+  display.drawRoundRect(10, 12, 108, 40, 4, boxColor);
 
   // Warning text
-  display.setTextColor(0);  // Black text on white background
+  display.setTextColor(txtColor);
   display.setTextSize(1);
   display.setCursor(30, 22);
   display.print("Overwrite State #");
@@ -1875,27 +1926,27 @@ void drawConfirmSavePopup() {
   // Draw the box around selected Y or N with flashing effect
   if ((millis() / 300) % 2 == 0) {
     // Draw filled box when flashing
-    display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, 0);
-    // Draw the selected letter in white on black background
-    display.setTextColor(1);
+    display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
+    // Draw the selected letter in background color on the box
+    display.setTextColor(bgColor);
     if (confirmSelection) {
       display.setCursor(45, 40);
       display.print("Y");
-      display.setTextColor(0);
+      display.setTextColor(txtColor);
       display.setCursor(75, 40);
       display.print("N");
     } else {
       display.setCursor(75, 40);
       display.print("N");
-      display.setTextColor(0);
+      display.setTextColor(txtColor);
       display.setCursor(45, 40);
       display.print("Y");
     }
   } else {
     // Draw outline box when not flashing
-    display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, 0);
-    // Draw both letters in black
-    display.setTextColor(0);
+    display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
+    // Draw both letters in text color
+    display.setTextColor(txtColor);
     display.setCursor(45, 40);
     display.print("Y");
     display.setCursor(75, 40);
@@ -1903,7 +1954,7 @@ void drawConfirmSavePopup() {
   }
 
   // Instructions
-  display.setTextColor(0);
+  display.setTextColor(txtColor);
   display.setCursor(21, 60);
   display.setTextSize(1);
   display.print("ENT: Confirm  ASN: Cancel");
@@ -1915,24 +1966,30 @@ void drawConfirmSavePopup() {
 // DRAW CONFIRM ASSIGN SAVE POPUP //
 // *********************** //
 void drawConfirmAssignSavePopup() {
-  display.clearDisplay();
+  
+  display.clearDisplay(); // CLEAR
+  
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
+  int boxColor = txtColor;
+
   display.setFont(&Picopixel);
 
-  // White background
-  display.fillRect(0, 0, 128, 64, 1);
+  // Background
+  display.fillRect(0, 0, 128, 64, bgColor);
 
   // Popup border
-  display.drawRoundRect(10, 12, 108, 40, 4, 0);  // Black Box
+  display.drawRoundRect(10, 12, 108, 40, 4, boxColor);
 
   // Determine which slot we're saving to
   int saveSlot = (currentStateSlot >= 0) ? currentStateSlot : 0;
 
   // Warning text
-  display.setTextColor(0);  // Black text on white background
+  display.setTextColor(txtColor);
   display.setTextSize(1);
   display.setCursor(38, 22);
   display.print("Apply Changes?");
-
 
   // Y/N with box around selected option
   display.setCursor(45, 47);
@@ -1957,27 +2014,27 @@ void drawConfirmAssignSavePopup() {
   // Draw the box around selected Y or N with flashing effect
   if ((millis() / 300) % 2 == 0) {
     // Draw filled box when flashing
-    display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, 0);
-    // Draw the selected letter in white on black background
-    display.setTextColor(1);
+    display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
+    // Draw the selected letter in background color on the box
+    display.setTextColor(bgColor);
     if (confirmAssignSave) {
       display.setCursor(45, 47);
       display.print("Y");
-      display.setTextColor(0);
+      display.setTextColor(txtColor);
       display.setCursor(75, 47);
       display.print("N");
     } else {
       display.setCursor(75, 47);
       display.print("N");
-      display.setTextColor(0);
+      display.setTextColor(txtColor);
       display.setCursor(45, 47);
       display.print("Y");
     }
   } else {
     // Draw outline box when not flashing
-    display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, 0);
-    // Draw both letters in black
-    display.setTextColor(0);
+    display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
+    // Draw both letters in text color
+    display.setTextColor(txtColor);
     display.setCursor(45, 47);
     display.print("Y");
     display.setCursor(75, 47);
@@ -1985,7 +2042,7 @@ void drawConfirmAssignSavePopup() {
   }
 
   // Instructions
-  display.setTextColor(0);
+  display.setTextColor(txtColor);
   display.setCursor(21, 60);
   display.setTextSize(1);
   display.print("ENT: Confirm  ASN: Cancel");
@@ -1997,14 +2054,20 @@ void drawConfirmAssignSavePopup() {
 // DRAW SETTINGS MENU      //
 // *********************** //
 void drawSettingsMenuScreen() {
-  display.clearDisplay();
+  
+  display.clearDisplay(); // CLEAR
+  
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
+
   display.setFont(&Picopixel);
-  display.setTextColor(0);
-
+  
   // DRAW UI
-  display.fillRect(0, 0, 128, 64, 1);          // WHITE BG
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // BORDER
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
+  display.setTextColor(txtColor);
   display.setCursor(6, 11);
   display.println("Settings");
 
@@ -2016,7 +2079,7 @@ void drawSettingsMenuScreen() {
 
   // Draw the bitmap indicator based on selection
   int indicatorY = 21 + (selectedMenuItem * 10);
-  display.drawBitmap(55, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, 0);
+  display.drawBitmap(55, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
 
   display.display();
 }
@@ -2025,14 +2088,20 @@ void drawSettingsMenuScreen() {
 // DRAW DISPLAY SETTINGS   //
 // *********************** //
 void drawDisplaySettings() {
-  display.clearDisplay();
+
+  display.clearDisplay();  // CLEAR
   display.setFont(&Picopixel);
-  display.setTextColor(0);
+
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;   // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;  // White if inverted, Black if normal
+  int boxColor = txtColor;                 // Box border uses text color
 
   // DRAW UI
-  display.fillRect(0, 0, 128, 64, 1);          // WHITE BG
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // BORDER
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
+  display.setTextColor(txtColor);
   display.setCursor(6, 11);
   display.println("Display settings");
 
@@ -2073,27 +2142,27 @@ void drawDisplaySettings() {
 
     if (flashState) {
       // Draw filled box when flashing
-      display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, 0);
-      // Draw the letter in white on black background
-      display.setTextColor(1);
+      display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
+      // Draw the selected letter in contrasting color
+      display.setTextColor(bgColor);  // Switch to background color for the selected letter
       if (displayInverted) {
         display.setCursor(79, 25);
         display.print("Y");
-        display.setTextColor(0);
+        display.setTextColor(txtColor);
         display.setCursor(91, 25);
         display.print("N");
       } else {
         display.setCursor(91, 25);
         display.print("N");
-        display.setTextColor(0);
+        display.setTextColor(txtColor);
         display.setCursor(79, 25);
         display.print("Y");
       }
     } else {
       // Draw outline box
-      display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, 0);
-      // Draw both letters in black
-      display.setTextColor(0);
+      display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
+      // Draw both letters in text color
+      display.setTextColor(txtColor);
       display.setCursor(79, 25);
       display.print("Y");
       display.setCursor(91, 25);
@@ -2101,21 +2170,21 @@ void drawDisplaySettings() {
     }
   } else {
     // Normal mode - just draw the outline box around selected option
-    display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, 0);
-    // Draw both letters in black
-    display.setTextColor(0);
+    display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
+    // Draw both letters in text color
+    display.setTextColor(txtColor);
     display.setCursor(79, 25);
     display.print("Y");
     display.setCursor(91, 25);
     display.print("N");
   }
 
-  // Reset text color
-  display.setTextColor(0);
+  // Reset text color for the bitmap indicator
+  display.setTextColor(txtColor);
 
   // Draw the bitmap indicator based on selection
   int indicatorY = 21 + (selectedMenuItem * 10);
-  display.drawBitmap(100, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, 0);
+  display.drawBitmap(100, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
 
   display.display();
 }
@@ -2125,19 +2194,21 @@ void drawDisplaySettings() {
 // *********************** //
 void drawAboutScreen() {
   display.clearDisplay();
+  
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;    // Black if inverted, White if normal
+  int txtColor = displayInverted ? 1 : 0;   // White if inverted, Black if normal
+
   display.setFont(&Picopixel);
-  display.setTextColor(0);
-
+  
   // DRAW UI
-  display.fillRect(0, 0, 128, 64, 1);          // WHITE BG
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // BORDER
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
+  display.drawRoundRect(1, 2, 126, 60, 4, txtColor);
 
-  display.drawRoundRect(1, 2, 126, 60, 4, 0);
-
-  display.setTextColor(0);
+  display.setTextColor(txtColor);
   display.setTextSize(2);
   display.setTextWrap(false);
-  display.setFont(&Picopixel);
   display.setCursor(46, 14);
   display.print("MC8P");
 
@@ -2153,8 +2224,6 @@ void drawAboutScreen() {
 
   display.setCursor(39, 43);
   display.print("MIDI controller");
-
-  display.display();
 
   display.display();
 }
@@ -2217,6 +2286,7 @@ void loadSettingsFromEEPROM() {
       }
 
       // LOAD DISPLAY INVERT SETTING
+      /*
       displayInverted = settings.displayInverted;
       // Apply the loaded setting to the display
       if (displayInverted) {
@@ -2225,6 +2295,7 @@ void loadSettingsFromEEPROM() {
         display.invertDisplay(false);
       }
 
+        */
       // LOAD LAST LOADED STATE
       currentStateSlot = settings.lastLoadedState;
 
@@ -2360,13 +2431,14 @@ void loadStateFromSlot(int slot) {
       }
 
       // Apply display invert setting
+      /*
       displayInverted = loadedState.displayInverted;
       if (displayInverted) {
         display.invertDisplay(true);
       } else {
         display.invertDisplay(false);
       }
-
+      */
       // Update the current state slot indicator
       currentStateSlot = slot;
 
@@ -2513,12 +2585,14 @@ void initController() {
       }
 
       // Apply display invert setting from the state
+      /*
       displayInverted = loadedState.displayInverted;
       if (displayInverted) {
         display.invertDisplay(true);
       } else {
         display.invertDisplay(false);
       }
+      */
 
       Serial.print("Successfully loaded state from slot ");
       Serial.println(currentStateSlot + 1);
@@ -2647,7 +2721,6 @@ void initController() {
 // Helper function to set default settings
 void useDefaultSettings() {
   displayInverted = false;
-  display.invertDisplay(false);
   currentStateSlot = -1;  // No state loaded
 
   // Set default MIDI messages
