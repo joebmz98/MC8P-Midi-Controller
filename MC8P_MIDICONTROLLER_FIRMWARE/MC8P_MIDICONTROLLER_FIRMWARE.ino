@@ -2284,18 +2284,6 @@ void loadSettingsFromEEPROM() {
           potMessages[i][j] = settings.potMessages[i][j];
         }
       }
-
-      // LOAD DISPLAY INVERT SETTING
-      /*
-      displayInverted = settings.displayInverted;
-      // Apply the loaded setting to the display
-      if (displayInverted) {
-        display.invertDisplay(true);
-      } else {
-        display.invertDisplay(false);
-      }
-
-        */
       // LOAD LAST LOADED STATE
       currentStateSlot = settings.lastLoadedState;
 
