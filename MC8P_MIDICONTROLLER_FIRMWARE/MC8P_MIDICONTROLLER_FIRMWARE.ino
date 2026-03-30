@@ -340,6 +340,10 @@ bool parameterEditMode = false;
 unsigned long parameterFlashTimer = 0;
 bool parameterFlashState = false;
 
+int lastPot8Value = -1;
+unsigned long lastPot8ChangeTime = 0;
+const unsigned long pot8DebounceDelay = 50; // Debounce delay in ms
+
 // ***** //
 // SETUP
 // ***** //
@@ -530,7 +534,9 @@ void loop() {
     }
   }
 
-  // Draw the appropriate screen
+  // Handle parameter editing with potentiometer 8
+  handleParameterEditWithPot();
+
   // Draw the appropriate screen
   if (currentScreen == MAIN_SCREEN) {
     drawMainScreen();
@@ -3243,16 +3249,111 @@ void initController() {
   Serial.println("=== BOOTUP COMPLETE ===");
 }
 
-// Helper function to set default settings
-void useDefaultSettings() {
-  displayInverted = false;
-  currentStateSlot = -1;  // No state loaded
-
-  // Set default MIDI messages
-  for (int i = 0; i < N_POTS; i++) {
-    messageCount[i] = 1;
-    potMessages[i][0].channel = potChannels[i];
-    potMessages[i][0].cc = potCCs[i];
-    potMessages[i][0].value = 0;
+// *********************** //
+// HANDLE POT PARAMETER EDIT
+// *********************** //
+void handleParameterEditWithPot() {
+  // Only process when in assign screen and editing mode
+  if (currentScreen != ASSIGN_SCREEN || !assignEditingMode) {
+    return;
+  }
+  
+  // Read potentiometer 8 (index 7, pin A9)
+  int pot8Raw = analogRead(POT_PIN[7]); // POT_PIN[7] is A9 (potentiometer 8)
+  
+  // Update responsive analog reading for smoother values
+  responsivePot[7].update(pot8Raw);
+  int pot8Value = responsivePot[7].getValue();
+  
+  // Debounce: only process if value has changed significantly
+  if (abs(pot8Value - lastPot8Value) > 5) { // 5 is the threshold for significant change
+    lastPot8Value = pot8Value;
+    lastPot8ChangeTime = millis();
+    
+    // Map to appropriate range based on what we're editing
+    bool valueChanged = false;
+    
+    switch(assignEditMode) {
+      case ASSIGN_EDIT_CHANNEL: {
+        // Map 0-1023 to 0-16 (channels 1-16 + OMNI)
+        int newChannel = map(pot8Value, 0, 1023, 0, 16);
+        if (newChannel != potMessages[selectedPot][selectedMessage].channel) {
+          potMessages[selectedPot][selectedMessage].channel = newChannel;
+          valueChanged = true;
+          Serial.print("Channel set to: ");
+          if (potMessages[selectedPot][selectedMessage].channel == 16) {
+            Serial.println("OMNI");
+          } else {
+            Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
+          }
+        }
+        break;
+      }
+      
+      case ASSIGN_EDIT_CC: {
+        // Map 0-1023 to 0-127
+        int newCC = map(pot8Value, 0, 1023, 0, 127);
+        if (newCC != potMessages[selectedPot][selectedMessage].cc) {
+          potMessages[selectedPot][selectedMessage].cc = newCC;
+          valueChanged = true;
+          Serial.print("CC set to: ");
+          Serial.println(potMessages[selectedPot][selectedMessage].cc);
+        }
+        break;
+      }
+      
+      case ASSIGN_EDIT_MIN: {
+        // Map 0-1023 to 0-127
+        int newMin = map(pot8Value, 0, 1023, 0, 127);
+        if (newMin != potMessages[selectedPot][selectedMessage].minValue) {
+          potMessages[selectedPot][selectedMessage].minValue = newMin;
+          // Ensure max value is at least min value
+          if (potMessages[selectedPot][selectedMessage].maxValue < newMin) {
+            potMessages[selectedPot][selectedMessage].maxValue = newMin;
+          }
+          valueChanged = true;
+          Serial.print("Min value set to: ");
+          Serial.println(potMessages[selectedPot][selectedMessage].minValue);
+        }
+        break;
+      }
+      
+      case ASSIGN_EDIT_MAX: {
+        // Map 0-1023 to 0-127
+        int newMax = map(pot8Value, 0, 1023, 0, 127);
+        if (newMax != potMessages[selectedPot][selectedMessage].maxValue) {
+          potMessages[selectedPot][selectedMessage].maxValue = newMax;
+          // Ensure min value is at most max value
+          if (potMessages[selectedPot][selectedMessage].minValue > newMax) {
+            potMessages[selectedPot][selectedMessage].minValue = newMax;
+          }
+          valueChanged = true;
+          Serial.print("Max value set to: ");
+          Serial.println(potMessages[selectedPot][selectedMessage].maxValue);
+        }
+        break;
+      }
+      
+      case ASSIGN_EDIT_INVERT: {
+        // Use potentiometer to toggle between NOR and INV
+        // Map to 0-1, with threshold at 512 (midpoint)
+        bool newInvert = (pot8Value > 512);
+        if (newInvert != potMessages[selectedPot][selectedMessage].inverted) {
+          potMessages[selectedPot][selectedMessage].inverted = newInvert;
+          valueChanged = true;
+          Serial.print("Direction set to: ");
+          Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR");
+        }
+        break;
+      }
+      
+      default:
+        break;
+    }
+    
+    // Force screen redraw if value changed
+    if (valueChanged) {
+      drawAssignScreen();
+    }
   }
 }
