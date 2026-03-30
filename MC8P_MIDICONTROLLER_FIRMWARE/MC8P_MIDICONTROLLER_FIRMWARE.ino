@@ -1093,19 +1093,19 @@ void readButtons() {
                   // Edit mode - modify values
                   switch(assignEditMode) {
                     case ASSIGN_EDIT_CHANNEL:
-                      // Handle channel with OMNI option (channel 16 = OMNI)
+                      // Handle channel with OMNI option (channel 17 = OMNI)
                       if (potMessages[selectedPot][selectedMessage].channel == 0) {
                         // If at channel 1, wrap to OMNI
-                        potMessages[selectedPot][selectedMessage].channel = 15;  // OMNI (15 in 0-based)
-                      } else if (potMessages[selectedPot][selectedMessage].channel == 15) {
+                        potMessages[selectedPot][selectedMessage].channel = 16;  // OMNI (16 in 0-based)
+                      } else if (potMessages[selectedPot][selectedMessage].channel == 16) {
                         // If at OMNI, wrap to channel 16
-                        potMessages[selectedPot][selectedMessage].channel = 14;  // Channel 16 (14 in 0-based)
+                        potMessages[selectedPot][selectedMessage].channel = 15;  // Channel 16 (15 in 0-based)
                       } else {
                         // Normal decrement
                         potMessages[selectedPot][selectedMessage].channel--;
                       }
                       Serial.print("Channel set to: ");
-                      if (potMessages[selectedPot][selectedMessage].channel == 15) {
+                      if (potMessages[selectedPot][selectedMessage].channel == 16) {
                         Serial.println("OMNI");
                       } else {
                         Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
@@ -1297,11 +1297,11 @@ void readButtons() {
                   // Edit mode - modify values
                   switch(assignEditMode) {
                     case ASSIGN_EDIT_CHANNEL:
-                      // Handle channel with OMNI option (channel 16 = OMNI)
-                      if (potMessages[selectedPot][selectedMessage].channel == 14) {
+                      // Handle channel with OMNI option (channel 17 = OMNI)
+                      if (potMessages[selectedPot][selectedMessage].channel == 15) {
                         // If at channel 16, wrap to OMNI
-                        potMessages[selectedPot][selectedMessage].channel = 15;  // OMNI (15 in 0-based)
-                      } else if (potMessages[selectedPot][selectedMessage].channel == 15) {
+                        potMessages[selectedPot][selectedMessage].channel = 16;  // OMNI (16 in 0-based)
+                      } else if (potMessages[selectedPot][selectedMessage].channel == 16) {
                         // If at OMNI, wrap to channel 1
                         potMessages[selectedPot][selectedMessage].channel = 0;
                       } else {
@@ -1309,7 +1309,7 @@ void readButtons() {
                         potMessages[selectedPot][selectedMessage].channel++;
                       }
                       Serial.print("Channel set to: ");
-                      if (potMessages[selectedPot][selectedMessage].channel == 15) {
+                      if (potMessages[selectedPot][selectedMessage].channel == 16) {
                         Serial.println("OMNI");
                       } else {
                         Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
@@ -1839,19 +1839,19 @@ void drawAssignScreen() {
       if (assignEditMode == ASSIGN_MESSAGE_SELECT && !assignEditingMode && messageIndex == selectedMessage) {
         // Draw the bar with flashing effect for message selection
         if ((millis() / 400) % 2 == 0) {
-          display.setCursor(4,yPos);
+          display.setCursor(4, yPos);
           display.setTextColor(txtColor);
-          display.print("[                                           ] ");
-        } 
-      } 
+          display.print("[                                           ]");
+        }
+      }
 
       display.setCursor(8, yPos);
 
       // Display message parameters in the new format: "Ch 1 | CC 7 | 0-127 | NOR"
       display.print("Ch ");
       
-      // Handle OMNI option (channel 16 will be displayed as "OMNI")
-      if (potMessages[selectedPot][messageIndex].channel == 15) {  // 15 = OMNI in 0-based index
+      // Handle OMNI option (channel 17 = OMNI)
+      if (potMessages[selectedPot][messageIndex].channel == 16) {  // 16 = OMNI in 0-based index
         display.print("OMNI");
       } else {
         display.print(potMessages[selectedPot][messageIndex].channel + 1);
@@ -1874,56 +1874,127 @@ void drawAssignScreen() {
 
       // Show parameter edit indicator for selected message when in edit mode
       if (messageIndex == selectedMessage && assignEditingMode) {
-        // Determine which parameter is being edited and its position
-        int editStartX = 0;
-        int editEndX = 0;
+        // Calculate the X position and width for each parameter
+        int editX = 8; // Start after the cursor position
         int parameterWidth = 0;
         
-        // Calculate positions based on the parameter being edited
+        // First, we need to calculate the X position by measuring the text before the parameter
         switch (assignEditMode) {
-          case ASSIGN_EDIT_CHANNEL:
-            // "Ch X" - position after "Ch "
-            editStartX = (3 * 6);  // 3 characters for "Ch "
-            editEndX = (6 * 6);    // Up to "Ch OMNI" (7 chars)
-            parameterWidth = (editEndX - editStartX);
+          case ASSIGN_EDIT_CHANNEL: {
+            // Measure "Ch " prefix
+            String prefix = "Ch ";
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+            editX = 8 + w;
+            
+            // Get the channel string to measure its width
+            String channelStr;
+            if (potMessages[selectedPot][selectedMessage].channel == 16) {
+              channelStr = "OMNI";
+            } else {
+              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+            }
+            display.getTextBounds(channelStr, 0, 0, &x1, &y1, &w, &h);
+            parameterWidth = w;
             break;
-          case ASSIGN_EDIT_CC:
-            // "CC XXX" - position after " | CC "
-            editStartX = (7 * 6); // 12 chars into the string
-            editEndX = (7 * 6);   // 18 chars for "CC XXX"
-            parameterWidth = (editEndX - editStartX);
+          }
+          case ASSIGN_EDIT_CC: {
+            // Measure "Ch X | CC " prefix
+            String channelStr;
+            if (potMessages[selectedPot][selectedMessage].channel == 16) {
+              channelStr = "OMNI";
+            } else {
+              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+            }
+            String prefix = "Ch " + channelStr + " | CC ";
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+            editX = 8 + w;
+            
+            // Get the CC value string width
+            String ccStr = String(potMessages[selectedPot][selectedMessage].cc);
+            display.getTextBounds(ccStr, 0, 0, &x1, &y1, &w, &h);
+            parameterWidth = w;
             break;
-          case ASSIGN_EDIT_MIN:
-            // Min value position (after " | ")
-            editStartX = (20 * 6); // 20 chars into the string
-            editEndX = (23 * 6);   // 23 chars for "XXX"
-            parameterWidth = (editEndX - editStartX);
+          }
+          case ASSIGN_EDIT_MIN: {
+            // Measure up to the min value
+            String channelStr;
+            if (potMessages[selectedPot][selectedMessage].channel == 16) {
+              channelStr = "OMNI";
+            } else {
+              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+            }
+            String prefix = "Ch " + channelStr + " | CC " + String(potMessages[selectedPot][selectedMessage].cc) + " | ";
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+            editX = 8 + w;
+            
+            // Get the min value string width
+            String minStr = String(potMessages[selectedPot][selectedMessage].minValue);
+            display.getTextBounds(minStr, 0, 0, &x1, &y1, &w, &h);
+            parameterWidth = w;
             break;
-          case ASSIGN_EDIT_MAX:
-            // Max value position (after "-")
-            editStartX = 6 + (24 * 6); // 24 chars into the string
-            editEndX = 6 + (27 * 6);   // 27 chars for "XXX"
-            parameterWidth = (editEndX - editStartX);
+          }
+          case ASSIGN_EDIT_MAX: {
+            // Measure up to the max value (including the dash)
+            String channelStr;
+            if (potMessages[selectedPot][selectedMessage].channel == 16) {
+              channelStr = "OMNI";
+            } else {
+              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+            }
+            String prefix = "Ch " + channelStr + " | CC " + String(potMessages[selectedPot][selectedMessage].cc) + " | " + 
+                           String(potMessages[selectedPot][selectedMessage].minValue) + "-";
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+            editX = 8 + w;
+            
+            // Get the max value string width
+            String maxStr = String(potMessages[selectedPot][selectedMessage].maxValue);
+            display.getTextBounds(maxStr, 0, 0, &x1, &y1, &w, &h);
+            parameterWidth = w;
             break;
-          case ASSIGN_EDIT_INVERT:
-            // Direction (NOR/INV) position
-            editStartX =  (32 * 6); // 32 chars into the string
-            editEndX = 6 + (38 * 6);   // 38 chars for "NOR/INV"
-            parameterWidth = (editEndX - editStartX);
+          }
+          case ASSIGN_EDIT_INVERT: {
+            // Measure up to the direction (including the " | " before it)
+            String channelStr;
+            if (potMessages[selectedPot][selectedMessage].channel == 16) {
+              channelStr = "OMNI";
+            } else {
+              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+            }
+            String prefix = "Ch " + channelStr + " | CC " + String(potMessages[selectedPot][selectedMessage].cc) + " | " +
+                           String(potMessages[selectedPot][selectedMessage].minValue) + "-" + 
+                           String(potMessages[selectedPot][selectedMessage].maxValue) + " | ";
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+            editX = 8 + w;
+            
+            // Get the direction string width
+            String dirStr = potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR";
+            display.getTextBounds(dirStr, 0, 0, &x1, &y1, &w, &h);
+            parameterWidth = w;
             break;
+          }
         }
 
         // Flash the parameter being edited
-        if (editStartX > 0 && (millis() / 200) % 2 == 0) {
-          display.fillRect(editStartX, yPos - 5, parameterWidth, 7, txtColor);
+        if (editX > 0 && (millis() / 200) % 2 == 0) {
+          display.fillRect(editX, yPos - 5, parameterWidth + 2, 7, txtColor); // MODIFIED TO LINE UP CORRECTLY
           display.setTextColor(bgColor);
           // Redraw the parameter with highlighted background
-          display.setCursor(editStartX, yPos);
+          display.setCursor(editX + 1, yPos); // MODIFIED TO LINE UP CORRECTLY
           
           // Redraw just the parameter being edited
           switch (assignEditMode) {
             case ASSIGN_EDIT_CHANNEL:
-              if (potMessages[selectedPot][selectedMessage].channel == 15) {
+              if (potMessages[selectedPot][selectedMessage].channel == 16) {
                 display.print("OMNI");
               } else {
                 display.print(potMessages[selectedPot][selectedMessage].channel + 1);
@@ -1951,8 +2022,6 @@ void drawAssignScreen() {
       }
     }
   }
-
-  
 
   // SCROLL BAR
   if (messageCount[selectedPot] > MAX_VISIBLE_MESSAGES) {
