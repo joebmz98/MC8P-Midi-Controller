@@ -133,6 +133,7 @@ ScreenState currentScreen = MAIN_SCREEN;
 enum AssignEditMode {
   ASSIGN_POT_SELECT,      // Selecting which pot to edit
   ASSIGN_MESSAGE_SELECT,  // Selecting which message to edit
+  ASSIGN_ADD_REMOVE,      // Selecting Add or Remove button
   ASSIGN_EDIT_CHANNEL,    // Editing channel
   ASSIGN_EDIT_CC,         // Editing CC number
   ASSIGN_EDIT_INVERT,     // Editing invert setting
@@ -339,6 +340,7 @@ int selectedParameter = 0;  // 0: Channel, 1: CC, 2: Min Range, 3: Max Range, 4:
 bool parameterEditMode = false;
 unsigned long parameterFlashTimer = 0;
 bool parameterFlashState = false;
+int selectedAddRemove = 0;  // 0 = Add, 1 = Remove
 
 int lastPot8Value = -1;
 unsigned long lastPot8ChangeTime = 0;
@@ -693,6 +695,7 @@ void readButtons() {
                     selectedPot = 0;
                     selectedMessage = 0;
                     scrollOffset = 0;
+                    selectedAddRemove = 2;  // Reset to message selection
                     // Reset assign screen navigation states
                     assignEditMode = ASSIGN_POT_SELECT;
                     assignEditingMode = false;
@@ -931,11 +934,13 @@ void readButtons() {
                     case ASSIGN_EDIT_INVERT:
                       assignEditMode = ASSIGN_MESSAGE_SELECT;
                       assignEditingMode = false;
+                      selectedAddRemove = 2;  // Reset to message selection
                       Serial.println("Exited edit mode");
                       break;
                     default:
                       assignEditMode = ASSIGN_MESSAGE_SELECT;
                       assignEditingMode = false;
+                      selectedAddRemove = 2;
                       break;
                   }
                 } else {
@@ -943,12 +948,32 @@ void readButtons() {
                   if (assignEditMode == ASSIGN_POT_SELECT) {
                     // Enter message selection mode
                     assignEditMode = ASSIGN_MESSAGE_SELECT;
+                    selectedAddRemove = 2;  // Reset to message selection
                     Serial.println("Entered message selection mode");
-                  } else if (assignEditMode == ASSIGN_MESSAGE_SELECT && messageCount[selectedPot] > 0) {
-                    // Enter edit mode starting with channel
-                    assignEditingMode = true;
-                    assignEditMode = ASSIGN_EDIT_CHANNEL;
-                    Serial.println("Entered edit mode - editing Channel");
+                  } else if (assignEditMode == ASSIGN_MESSAGE_SELECT) {
+                    // Check if we're on Add or Remove button
+                    if (selectedAddRemove == 0) {
+                      // Add button selected
+                      if (messageCount[selectedPot] < MAX_MESSAGES_PER_POT) {
+                        addMidiControl();
+                        Serial.println("Added new MIDI control");
+                      } else {
+                        Serial.println("Maximum messages reached for this pot");
+                      }
+                    } else if (selectedAddRemove == 1) {
+                      // Remove button selected
+                      if (messageCount[selectedPot] > 1) {
+                        removeMidiControl();
+                        Serial.println("Removed MIDI control");
+                      } else {
+                        Serial.println("Cannot remove the last MIDI message");
+                      }
+                    } else if (messageCount[selectedPot] > 0) {
+                      // Enter edit mode for selected message
+                      assignEditingMode = true;
+                      assignEditMode = ASSIGN_EDIT_CHANNEL;
+                      Serial.println("Entered edit mode - editing Channel");
+                    }
                   }
                 }
               }
@@ -1157,17 +1182,34 @@ void readButtons() {
                       break;
                   }
                 } else {
-                  // Selection mode - navigate between pots or messages
+                  // Selection mode - navigate between pots, messages, or add/remove buttons
                   if (assignEditMode == ASSIGN_POT_SELECT) {
                     selectedPot = (selectedPot - 1 + N_POTS) % N_POTS;
                     selectedMessage = 0;
                     scrollOffset = 0;
                     Serial.print("Selected Pot ");
                     Serial.println(selectedPot + 1);
-                  } else if (assignEditMode == ASSIGN_MESSAGE_SELECT && messageCount[selectedPot] > 0) {
-                    selectedMessage = (selectedMessage - 1 + messageCount[selectedPot]) % messageCount[selectedPot];
-                    Serial.print("Selected Message ");
-                    Serial.println(selectedMessage);
+                  } else if (assignEditMode == ASSIGN_MESSAGE_SELECT) {
+                    // Navigate through messages and Add/Remove buttons
+                    if (messageCount[selectedPot] > 0) {
+                      if (selectedAddRemove == 2 && selectedMessage == 0) {
+                        // At first message, prev goes to Remove button
+                        selectedAddRemove = 1;
+                      } else if (selectedAddRemove == 1) {
+                        // On Remove button, prev goes to Add button
+                        selectedAddRemove = 0;
+                      } else if (selectedAddRemove == 0) {
+                        // On Add button, prev goes to last message
+                        selectedAddRemove = 2;
+                        selectedMessage = messageCount[selectedPot] - 1;
+                      } else {
+                        // Normal message navigation
+                        selectedMessage = (selectedMessage - 1 + messageCount[selectedPot]) % messageCount[selectedPot];
+                      }
+                    } else {
+                      // No messages, just toggle between Add and Remove
+                      selectedAddRemove = (selectedAddRemove - 1 + 2) % 2;
+                    }
                   }
                 }
               }
@@ -1361,17 +1403,34 @@ void readButtons() {
                       break;
                   }
                 } else {
-                  // Selection mode - navigate between pots or messages
+                  // Selection mode - navigate between pots, messages, or add/remove buttons
                   if (assignEditMode == ASSIGN_POT_SELECT) {
                     selectedPot = (selectedPot + 1) % N_POTS;
                     selectedMessage = 0;
                     scrollOffset = 0;
                     Serial.print("Selected Pot ");
                     Serial.println(selectedPot + 1);
-                  } else if (assignEditMode == ASSIGN_MESSAGE_SELECT && messageCount[selectedPot] > 0) {
-                    selectedMessage = (selectedMessage + 1) % messageCount[selectedPot];
-                    Serial.print("Selected Message ");
-                    Serial.println(selectedMessage);
+                  } else if (assignEditMode == ASSIGN_MESSAGE_SELECT) {
+                    // Navigate through messages and Add/Remove buttons
+                    if (messageCount[selectedPot] > 0) {
+                      if (selectedAddRemove == 2 && selectedMessage == messageCount[selectedPot] - 1) {
+                        // At last message, next goes to Add button
+                        selectedAddRemove = 0;
+                      } else if (selectedAddRemove == 0) {
+                        // On Add button, next goes to Remove button
+                        selectedAddRemove = 1;
+                      } else if (selectedAddRemove == 1) {
+                        // On Remove button, next goes to first message
+                        selectedAddRemove = 2;
+                        selectedMessage = 0;
+                      } else {
+                        // Normal message navigation
+                        selectedMessage = (selectedMessage + 1) % messageCount[selectedPot];
+                      }
+                    } else {
+                      // No messages, just toggle between Add and Remove
+                      selectedAddRemove = (selectedAddRemove + 1) % 2;
+                    }
                   }
                 }
               }
@@ -1390,8 +1449,6 @@ void readButtons() {
           // *********************** //
           switch (i) {
             case 0:  // ASSIGN BUTTON RELEASE
-              // Toggle between Channel/CC editing on ASSIGN_SCREEN (legacy behavior removed)
-              // This functionality is now handled by the new navigation system
               assignButtonHeld = false;
               break;
 
@@ -1409,9 +1466,6 @@ void readButtons() {
               break;
 
             case 2:  // PREV BUTTON RELEASE
-              // ON ASSIGN SCREEN AND *ONLY* ENTER IS HELD
-              // RELEASE OF NEXT/PREV NAVIGATES BETWEEN MIDI CONTROL MESSAGES (legacy behavior)
-              // This is now handled by the new navigation system, but keep for compatibility
               if (prevButtonPressed && enterButtonHeld && currentScreen == ASSIGN_SCREEN && !inAddRemoveOperation) {
                 if (messageCount[selectedPot] > 0) {
                   selectedMessage = (selectedMessage - 1 + messageCount[selectedPot]) % messageCount[selectedPot];
@@ -1423,9 +1477,6 @@ void readButtons() {
               break;
 
             case 3:  // NEXT BUTTON RELEASE
-              // ON ASSIGN SCREEN AND *ONLY* ENTER IS HELD
-              // RELEASE OF NEXT/PREV NAVIGATES BETWEEN MIDI CONTROL MESSAGES (legacy behavior)
-              // This is now handled by the new navigation system, but keep for compatibility
               if (nextButtonPressed && enterButtonHeld && currentScreen == ASSIGN_SCREEN && !inAddRemoveOperation) {
                 if (messageCount[selectedPot] > 0) {
                   selectedMessage = (selectedMessage + 1) % messageCount[selectedPot];
@@ -1454,55 +1505,8 @@ void readButtons() {
     }
   }
 
-  // *********************** //
-  // MIDI MESSAGE MANAGEMENT
-  // *********************** //
-
-  // *********************** //
-  // ADD NEW MIDI CONTROL TO POT
-  // *********************** //
-  // ON THE ASSIGN SCREEN AND HOLDING THE ENTER BUTTON AND THE NEXT BUTTON
-  // ADDS NEW MIDI CONTROL MESSAGE TO SELECTED POT
-  if (currentScreen == ASSIGN_SCREEN && buttonState[1] == HIGH && buttonState[3] == HIGH && buttonState[0] == LOW && buttonState[2] == LOW) {
-    if (!enterNextHeld) {
-      enterNextHeld = true;
-      enterNextHoldStart = millis();
-      Serial.println("ENTER+NEXT combination detected - start hold timer");
-    } else if (millis() - enterNextHoldStart >= 1500) {
-      addMidiControl();
-      Serial.println("ENTER+NEXT held for 1.5s - adding new MIDI control");
-      enterNextHeld = false;
-      inAddRemoveOperation = true;  // SET FLAG TO INDICATE IN ADD/REMOVE MIDI OPERATION
-    }
-  } else {
-    if (enterNextHeld) {
-      Serial.println("ENTER+NEXT combination released");
-      enterNextHeld = false;
-    }
-  }
-
-  // *********************** //
-  // REMOVE NEW MIDI CONTROL TO POT
-  // *********************** //
-  // ON THE ASSIGN SCREEN AND HOLDING THE ENTER BUTTON AND THE PREV BUTTON
-  // REMOVES SELECTED MIDI CONTROL MESSAGE FROM SELECTED POT
-  if (currentScreen == ASSIGN_SCREEN && buttonState[1] == HIGH && buttonState[2] == HIGH && buttonState[0] == LOW && buttonState[3] == LOW) {
-    if (!enterPrevHeld) {
-      enterPrevHeld = true;
-      enterPrevHoldStart = millis();
-      Serial.println("ENTER+PREV combination detected - start hold timer");
-    } else if (millis() - enterPrevHoldStart >= 1500) {
-      removeMidiControl();
-      Serial.println("ENTER+PREV held for 1.5s - removing MIDI control");
-      enterPrevHeld = false;
-      inAddRemoveOperation = true;  // SET FLAG TO INDICATE IN ADD/REMOVE MIDI OPERATION
-    }
-  } else {
-    if (enterPrevHeld) {
-      Serial.println("ENTER+PREV combination released");
-      enterPrevHeld = false;
-    }
-  }
+  // REMOVED: ADD NEW MIDI CONTROL TO POT (ENTER+NEXT combination)
+  // REMOVED: REMOVE NEW MIDI CONTROL TO POT (ENTER+PREV combination)
 
   // *********************** //
   // RESET ALL MIDI CONTROL SETTINGS
@@ -1515,7 +1519,6 @@ void readButtons() {
       prevNextHoldStart = millis();
       Serial.println("PREV+NEXT combination detected - start hold timer");
     } else if (millis() - prevNextHoldStart >= prevNextHoldDuration) {
-
       // RESET
       //resetToDefaultSettings();
       Serial.println("PREV+NEXT held for 5s - reset to default settings");
@@ -1840,20 +1843,22 @@ void drawAssignScreen() {
 
     int yPos = 26 + (i * 10);
 
-    if (yPos <= 56) {
+    // Only display if it won't overlap with Add/Remove buttons
+    if (yPos <= 48) {
       // Draw the bar indicator for the selected message
-      if (assignEditMode == ASSIGN_MESSAGE_SELECT && !assignEditingMode && messageIndex == selectedMessage) {
+      if (assignEditMode == ASSIGN_MESSAGE_SELECT && !assignEditingMode && messageIndex == selectedMessage && selectedAddRemove == 2) {
         // Draw the bar with flashing effect for message selection
         if ((millis() / 400) % 2 == 0) {
           display.setCursor(4, yPos);
           display.setTextColor(txtColor);
-          display.print("[                                           ]");
+          display.print("[                                                      ]");
         }
       }
 
       display.setCursor(8, yPos);
 
-      // Display message parameters in the new format: "Ch 1 | CC 7 | 0-127 | NOR"
+      // DISPLAY MIDI MESSAGES 
+      // FORMAT: Ch X | CC X | 0-127 | NOR
       display.print("Ch ");
       
       // Handle OMNI option (channel 17 = OMNI)
@@ -1992,10 +1997,10 @@ void drawAssignScreen() {
 
         // Flash the parameter being edited
         if (editX > 0 && (millis() / 200) % 2 == 0) {
-          display.fillRect(editX, yPos - 5, parameterWidth + 2, 7, txtColor); // MODIFIED TO LINE UP CORRECTLY
+          display.fillRect(editX, yPos - 5, parameterWidth + 2, 7, txtColor);
           display.setTextColor(bgColor);
           // Redraw the parameter with highlighted background
-          display.setCursor(editX + 1, yPos); // MODIFIED TO LINE UP CORRECTLY
+          display.setCursor(editX + 1, yPos);
           
           // Redraw just the parameter being edited
           switch (assignEditMode) {
@@ -2029,8 +2034,94 @@ void drawAssignScreen() {
     }
   }
 
-  // SCROLL BAR
-  if (messageCount[selectedPot] > MAX_VISIBLE_MESSAGES) {
+  // Draw Add/Remove buttons at the bottom
+  int buttonYPos = 56;
+  
+  // Get text widths for positioning
+  int16_t x1, y1;
+  uint16_t w, h, w2, h2;
+  display.getTextBounds("+ Add", 0, 0, &x1, &y1, &w, &h);
+  display.getTextBounds("- Remove", 0, 0, &x1, &y1, &w2, &h2);
+  
+  // Draw selection indicators for Add/Remove buttons using text brackets
+  if ((assignEditMode == ASSIGN_MESSAGE_SELECT || assignEditMode == ASSIGN_ADD_REMOVE) && !assignEditingMode) {
+    // Draw Add button with brackets if selected
+    if (selectedAddRemove == 0) {
+      // Position for Add button brackets
+      int addBracketStart = 4;
+      int addButtonX = 8;
+      int addBracketEnd = addButtonX + w + 2;
+      
+      // Draw Add button with brackets that flash
+      if ((millis() / 400) % 2 == 0) {
+        // Flash state - draw brackets (visible)
+        display.setCursor(addBracketStart, buttonYPos);
+        display.print("[");
+        display.setCursor(addButtonX, buttonYPos);
+        display.print("+ Add");
+        display.setCursor(addBracketEnd, buttonYPos);
+        display.print("]");
+      } else {
+        // Non-flash state - draw brackets as spaces (invisible)
+        display.setCursor(addBracketStart, buttonYPos);
+        display.print(" ");
+        display.setCursor(addButtonX, buttonYPos);
+        display.print("+ Add");
+        display.setCursor(addBracketEnd, buttonYPos);
+        display.print(" ");
+      }
+      
+      // Draw Remove button normally
+      display.setCursor(8 + w + 10, buttonYPos);
+      display.print("- Remove");
+      
+    } 
+    // Draw Remove button with brackets if selected
+    else if (selectedAddRemove == 1) {
+      int removeX = 8 + w + 10;
+      int removeBracketStart = removeX - 4;
+      int removeBracketEnd = removeX + w2 + 2;
+      
+      // Draw Add button normally
+      display.setCursor(8, buttonYPos);
+      display.print("+ Add");
+      
+      // Draw Remove button with brackets that flash
+      if ((millis() / 400) % 2 == 0) {
+        // Flash state - draw brackets (visible)
+        display.setCursor(removeBracketStart, buttonYPos);
+        display.print("[");
+        display.setCursor(removeX, buttonYPos);
+        display.print("- Remove");
+        display.setCursor(removeBracketEnd, buttonYPos);
+        display.print("]");
+      } else {
+        // Non-flash state - draw brackets as spaces (invisible)
+        display.setCursor(removeBracketStart, buttonYPos);
+        display.print(" ");
+        display.setCursor(removeX, buttonYPos);
+        display.print("- Remove");
+        display.setCursor(removeBracketEnd, buttonYPos);
+        display.print(" ");
+      }
+      
+    } else {
+      // Neither selected - normal display without brackets
+      display.setCursor(8, buttonYPos);
+      display.print("+ Add");
+      display.setCursor(8 + w + 10, buttonYPos);
+      display.print("- Remove");
+    }
+  } else {
+    // Normal display without brackets
+    display.setCursor(8, buttonYPos);
+    display.print("+ Add");
+    display.setCursor(8 + w + 10, buttonYPos);
+    display.print("- Remove");
+  }
+
+  // SCROLL BAR - Show when there are 4 or more messages
+  if (messageCount[selectedPot] >= MAX_VISIBLE_MESSAGES) {
     display.drawLine(121, 20, 121, 59, txtColor);
     int scrollBarHeight = 59 - 21;
     int thumbHeight = max(5, scrollBarHeight * MAX_VISIBLE_MESSAGES / messageCount[selectedPot]);
