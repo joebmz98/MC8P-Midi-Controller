@@ -200,6 +200,7 @@ const int POT_TIMEOUT = 300;
 unsigned long pPotTime[N_POTS] = { 0 };
 unsigned long potTimer[N_POTS] = { 0 };
 
+
 float snapMultiplier = 0.01;
 ResponsiveAnalogRead responsivePot[N_POTS] = {
   ResponsiveAnalogRead(POT_PIN[0], true, snapMultiplier),
@@ -333,6 +334,11 @@ static const unsigned char PROGMEM image_ctrlMessageIndicator_bits[] = { 0x20, 0
 static const unsigned char PROGMEM image_potMatrixGrid_bits[] = { 0x92, 0x40, 0x00, 0x00, 0x00, 0x00, 0x92, 0x40 };
 static const unsigned char PROGMEM image_valueIndicator_bits[] = { 0xfc };
 
+// ASSIGN PARAMETER EDITING
+int selectedParameter = 0;  // 0: Channel, 1: CC, 2: Min Range, 3: Max Range, 4: Direction
+bool parameterEditMode = false;
+unsigned long parameterFlashTimer = 0;
+bool parameterFlashState = false;
 
 // ***** //
 // SETUP
@@ -898,17 +904,13 @@ void readButtons() {
               // ASSIGN SCREEN - Handle ENTER press for navigation and editing
               else if (currentScreen == ASSIGN_SCREEN) {
                 if (assignEditingMode) {
-                  // Exit edit mode and cycle to next parameter or exit
+                  // Cycle to next parameter or exit edit mode
                   switch(assignEditMode) {
                     case ASSIGN_EDIT_CHANNEL:
                       assignEditMode = ASSIGN_EDIT_CC;
                       Serial.println("Now editing CC");
                       break;
                     case ASSIGN_EDIT_CC:
-                      assignEditMode = ASSIGN_EDIT_INVERT;
-                      Serial.println("Now editing Direction");
-                      break;
-                    case ASSIGN_EDIT_INVERT:
                       assignEditMode = ASSIGN_EDIT_MIN;
                       Serial.println("Now editing Min Value");
                       break;
@@ -917,12 +919,15 @@ void readButtons() {
                       Serial.println("Now editing Max Value");
                       break;
                     case ASSIGN_EDIT_MAX:
+                      assignEditMode = ASSIGN_EDIT_INVERT;
+                      Serial.println("Now editing Direction");
+                      break;
+                    case ASSIGN_EDIT_INVERT:
                       assignEditMode = ASSIGN_MESSAGE_SELECT;
                       assignEditingMode = false;
                       Serial.println("Exited edit mode");
                       break;
                     default:
-                      // Handle any other cases
                       assignEditMode = ASSIGN_MESSAGE_SELECT;
                       assignEditingMode = false;
                       break;
@@ -1088,10 +1093,23 @@ void readButtons() {
                   // Edit mode - modify values
                   switch(assignEditMode) {
                     case ASSIGN_EDIT_CHANNEL:
-                      potMessages[selectedPot][selectedMessage].channel = 
-                        (potMessages[selectedPot][selectedMessage].channel - 1 + 16) % 16;
+                      // Handle channel with OMNI option (channel 16 = OMNI)
+                      if (potMessages[selectedPot][selectedMessage].channel == 0) {
+                        // If at channel 1, wrap to OMNI
+                        potMessages[selectedPot][selectedMessage].channel = 15;  // OMNI (15 in 0-based)
+                      } else if (potMessages[selectedPot][selectedMessage].channel == 15) {
+                        // If at OMNI, wrap to channel 16
+                        potMessages[selectedPot][selectedMessage].channel = 14;  // Channel 16 (14 in 0-based)
+                      } else {
+                        // Normal decrement
+                        potMessages[selectedPot][selectedMessage].channel--;
+                      }
                       Serial.print("Channel set to: ");
-                      Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
+                      if (potMessages[selectedPot][selectedMessage].channel == 15) {
+                        Serial.println("OMNI");
+                      } else {
+                        Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
+                      }
                       break;
                     case ASSIGN_EDIT_CC:
                       potMessages[selectedPot][selectedMessage].cc = 
@@ -1279,10 +1297,23 @@ void readButtons() {
                   // Edit mode - modify values
                   switch(assignEditMode) {
                     case ASSIGN_EDIT_CHANNEL:
-                      potMessages[selectedPot][selectedMessage].channel = 
-                        (potMessages[selectedPot][selectedMessage].channel + 1) % 16;
+                      // Handle channel with OMNI option (channel 16 = OMNI)
+                      if (potMessages[selectedPot][selectedMessage].channel == 14) {
+                        // If at channel 16, wrap to OMNI
+                        potMessages[selectedPot][selectedMessage].channel = 15;  // OMNI (15 in 0-based)
+                      } else if (potMessages[selectedPot][selectedMessage].channel == 15) {
+                        // If at OMNI, wrap to channel 1
+                        potMessages[selectedPot][selectedMessage].channel = 0;
+                      } else {
+                        // Normal increment
+                        potMessages[selectedPot][selectedMessage].channel++;
+                      }
                       Serial.print("Channel set to: ");
-                      Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
+                      if (potMessages[selectedPot][selectedMessage].channel == 15) {
+                        Serial.println("OMNI");
+                      } else {
+                        Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
+                      }
                       break;
                     case ASSIGN_EDIT_CC:
                       potMessages[selectedPot][selectedMessage].cc = 
@@ -1804,26 +1835,28 @@ void drawAssignScreen() {
     int yPos = 26 + (i * 10);
 
     if (yPos <= 56) {
-      // Draw the bracket indicator for all messages
-      display.drawRoundRect(3, yPos - 3, 122, 9, 1, txtColor);
-      
-      // Show selection indicator for message selection (filled bracket)
+      // Draw the bar indicator for the selected message
       if (assignEditMode == ASSIGN_MESSAGE_SELECT && !assignEditingMode && messageIndex == selectedMessage) {
-        if ((millis() / 300) % 2 == 0) {
-          display.fillRoundRect(4, yPos - 2, 120, 7, 1, txtColor);
-          display.setTextColor(bgColor);
-        } else {
+        // Draw the bar with flashing effect for message selection
+        if ((millis() / 400) % 2 == 0) {
+          display.setCursor(4,yPos);
           display.setTextColor(txtColor);
-        }
-      } else {
-        display.setTextColor(txtColor);
-      }
+          display.print("[                                           ] ");
+        } 
+      } 
 
-      display.setCursor(6, yPos);
+      display.setCursor(8, yPos);
 
       // Display message parameters in the new format: "Ch 1 | CC 7 | 0-127 | NOR"
       display.print("Ch ");
-      display.print(potMessages[selectedPot][messageIndex].channel + 1);
+      
+      // Handle OMNI option (channel 16 will be displayed as "OMNI")
+      if (potMessages[selectedPot][messageIndex].channel == 15) {  // 15 = OMNI in 0-based index
+        display.print("OMNI");
+      } else {
+        display.print(potMessages[selectedPot][messageIndex].channel + 1);
+      }
+      
       display.print(" | CC ");
       display.print(potMessages[selectedPot][messageIndex].cc);
       display.print(" | ");
@@ -1839,70 +1872,79 @@ void drawAssignScreen() {
         display.print("NOR");
       }
 
-      // Show edit indicator for selected message when in edit mode
+      // Show parameter edit indicator for selected message when in edit mode
       if (messageIndex == selectedMessage && assignEditingMode) {
-        // Determine what's being edited based on assignEditMode
-        int editX = 0;
-        int editWidth = 0;
-        int editStart = 0;
-        int editEnd = 0;
-
+        // Determine which parameter is being edited and its position
+        int editStartX = 0;
+        int editEndX = 0;
+        int parameterWidth = 0;
+        
+        // Calculate positions based on the parameter being edited
         switch (assignEditMode) {
           case ASSIGN_EDIT_CHANNEL:
-            // "Ch X" - position after "Ch " (3 chars) + number (1-2 chars)
-            editStart = 3;
-            editEnd = 7;
-            editX = 6 + (editStart * 6); // Approximate character width
-            editWidth = (editEnd - editStart) * 6;
+            // "Ch X" - position after "Ch "
+            editStartX = (3 * 6);  // 3 characters for "Ch "
+            editEndX = (6 * 6);    // Up to "Ch OMNI" (7 chars)
+            parameterWidth = (editEndX - editStartX);
             break;
           case ASSIGN_EDIT_CC:
-            // "| CC XXX" - find the CC position
-            editStart = 12;
-            editEnd = 18;
-            editX = 6 + (editStart * 6);
-            editWidth = (editEnd - editStart) * 6;
+            // "CC XXX" - position after " | CC "
+            editStartX = (7 * 6); // 12 chars into the string
+            editEndX = (7 * 6);   // 18 chars for "CC XXX"
+            parameterWidth = (editEndX - editStartX);
             break;
           case ASSIGN_EDIT_MIN:
-            // Min value position (after "| ")
-            editStart = 20;
-            editEnd = 23;
-            editX = 6 + (editStart * 6);
-            editWidth = (editEnd - editStart) * 6;
+            // Min value position (after " | ")
+            editStartX = (20 * 6); // 20 chars into the string
+            editEndX = (23 * 6);   // 23 chars for "XXX"
+            parameterWidth = (editEndX - editStartX);
             break;
           case ASSIGN_EDIT_MAX:
             // Max value position (after "-")
-            editStart = 24;
-            editEnd = 27;
-            editX = 6 + (editStart * 6);
-            editWidth = (editEnd - editStart) * 6;
+            editStartX = 6 + (24 * 6); // 24 chars into the string
+            editEndX = 6 + (27 * 6);   // 27 chars for "XXX"
+            parameterWidth = (editEndX - editStartX);
             break;
           case ASSIGN_EDIT_INVERT:
             // Direction (NOR/INV) position
-            editStart = 32;
-            editEnd = 38;
-            editX = 6 + (editStart * 6);
-            editWidth = (editEnd - editStart) * 6;
+            editStartX =  (32 * 6); // 32 chars into the string
+            editEndX = 6 + (38 * 6);   // 38 chars for "NOR/INV"
+            parameterWidth = (editEndX - editStartX);
             break;
         }
 
-        if (editX > 0 && (millis() / 200) % 2 == 0) {
-          display.fillRect(editX, yPos - 2, editWidth, 7, txtColor);
+        // Flash the parameter being edited
+        if (editStartX > 0 && (millis() / 200) % 2 == 0) {
+          display.fillRect(editStartX, yPos - 5, parameterWidth, 7, txtColor);
           display.setTextColor(bgColor);
-          // Redraw the entire line with edited value highlighted
-          display.setCursor(6, yPos);
-          display.print("Ch ");
-          display.print(potMessages[selectedPot][selectedMessage].channel + 1);
-          display.print(" | CC ");
-          display.print(potMessages[selectedPot][selectedMessage].cc);
-          display.print(" | ");
-          display.print(potMessages[selectedPot][selectedMessage].minValue);
-          display.print("-");
-          display.print(potMessages[selectedPot][selectedMessage].maxValue);
-          display.print(" | ");
-          if (potMessages[selectedPot][selectedMessage].inverted) {
-            display.print("INV");
-          } else {
-            display.print("NOR");
+          // Redraw the parameter with highlighted background
+          display.setCursor(editStartX, yPos);
+          
+          // Redraw just the parameter being edited
+          switch (assignEditMode) {
+            case ASSIGN_EDIT_CHANNEL:
+              if (potMessages[selectedPot][selectedMessage].channel == 15) {
+                display.print("OMNI");
+              } else {
+                display.print(potMessages[selectedPot][selectedMessage].channel + 1);
+              }
+              break;
+            case ASSIGN_EDIT_CC:
+              display.print(potMessages[selectedPot][selectedMessage].cc);
+              break;
+            case ASSIGN_EDIT_MIN:
+              display.print(potMessages[selectedPot][selectedMessage].minValue);
+              break;
+            case ASSIGN_EDIT_MAX:
+              display.print(potMessages[selectedPot][selectedMessage].maxValue);
+              break;
+            case ASSIGN_EDIT_INVERT:
+              if (potMessages[selectedPot][selectedMessage].inverted) {
+                display.print("INV");
+              } else {
+                display.print("NOR");
+              }
+              break;
           }
           display.setTextColor(txtColor);
         }
@@ -1910,54 +1952,7 @@ void drawAssignScreen() {
     }
   }
 
-  // SHOW MIDI VALUE AND EDIT INFO AT BOTTOM
-  display.setCursor(64, 56);
-  display.print("Val ");
-  display.print(currentMidiValue[selectedPot]);
-  display.print("/127");
-
-  // Show edit instructions based on mode
-  display.setCursor(8, 56);
-  if (assignEditingMode) {
-    switch (assignEditMode) {
-      case ASSIGN_EDIT_CHANNEL:
-        display.print("Edit Ch:");
-        display.print(potMessages[selectedPot][selectedMessage].channel + 1);
-        break;
-      case ASSIGN_EDIT_CC:
-        display.print("Edit CC:");
-        display.print(potMessages[selectedPot][selectedMessage].cc);
-        break;
-      case ASSIGN_EDIT_INVERT:
-        display.print("Dir:");
-        display.print(potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR");
-        break;
-      case ASSIGN_EDIT_MIN:
-        display.print("Min:");
-        display.print(potMessages[selectedPot][selectedMessage].minValue);
-        if ((millis() / 200) % 2 == 0) {
-          display.fillRect(40, 52, 20, 9, txtColor);
-          display.setTextColor(bgColor);
-          display.setCursor(42, 56);
-          display.print(potMessages[selectedPot][selectedMessage].minValue);
-          display.setTextColor(txtColor);
-        }
-        break;
-      case ASSIGN_EDIT_MAX:
-        display.print("Max:");
-        display.print(potMessages[selectedPot][selectedMessage].maxValue);
-        if ((millis() / 200) % 2 == 0) {
-          display.fillRect(40, 52, 20, 9, txtColor);
-          display.setTextColor(bgColor);
-          display.setCursor(42, 56);
-          display.print(potMessages[selectedPot][selectedMessage].maxValue);
-          display.setTextColor(txtColor);
-        }
-        break;
-    }
-  } else {
-    display.print("ENT:Edit  ASN:Save");
-  }
+  
 
   // SCROLL BAR
   if (messageCount[selectedPot] > MAX_VISIBLE_MESSAGES) {
