@@ -330,7 +330,7 @@ const int POT_MATRIX_POSITIONS[N_POTS][2] = {
 };
 
 // SCROLLING CONFIG
-const int MAX_VISIBLE_MESSAGES = 4;  // Number of messages visible at once
+const int MAX_VISIBLE_MESSAGES = 3;  // Number of messages visible at once
 int scrollOffset = 0;                // Current scroll position
 
 // DISPLAY BITMAPS
@@ -468,7 +468,7 @@ void loop() {
                                                           potMessages[i][j].maxValue,
                                                           potMessages[i][j].inverted);
                   potMessages[i][j].value = finalValue;
-                  
+
                   // Check for OMNI channel
                   if (potMessages[i][j].channel == 16) {  // OMNI
                     for (byte ch = 0; ch < 16; ch++) {
@@ -500,7 +500,7 @@ void loop() {
                                                           potMessages[i][j].minValue,
                                                           potMessages[i][j].maxValue,
                                                           potMessages[i][j].inverted);
-                  
+
                   // Check for OMNI channel
                   if (potMessages[i][j].channel == 16) {  // OMNI
                     for (byte ch = 0; ch < 16; ch++) {
@@ -521,7 +521,7 @@ void loop() {
                                                         potMessages[i][j].maxValue,
                                                         potMessages[i][j].inverted);
                 potMessages[i][j].value = finalValue;
-                
+
                 // Check for OMNI channel
                 if (potMessages[i][j].channel == 16) {  // OMNI
                   for (byte ch = 0; ch < 16; ch++) {
@@ -1301,9 +1301,29 @@ void readButtons() {
                         // On Add button, prev goes to last message
                         selectedAddRemove = 2;
                         selectedMessage = messageCount[selectedPot] - 1;
+                        // Update scroll offset to show the last message
+                        scrollOffset = max(0, selectedMessage - MAX_VISIBLE_MESSAGES + 1);
+                        Serial.print("Selected Message ");
+                        Serial.println(selectedMessage);
+                        Serial.print("Scroll offset: ");
+                        Serial.println(scrollOffset);
                       } else {
-                        // Normal message navigation
+                        // Normal message navigation - decrement message index
                         selectedMessage = (selectedMessage - 1 + messageCount[selectedPot]) % messageCount[selectedPot];
+                        // Update scroll offset to keep selected message visible
+                        if (selectedMessage < scrollOffset) {
+                          // Selected message is above visible area, scroll up
+                          scrollOffset = selectedMessage;
+                        } else if (selectedMessage >= scrollOffset + MAX_VISIBLE_MESSAGES) {
+                          // Selected message is below visible area, scroll down
+                          scrollOffset = selectedMessage - MAX_VISIBLE_MESSAGES + 1;
+                        }
+                        // Constrain scroll offset
+                        scrollOffset = constrain(scrollOffset, 0, max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES));
+                        Serial.print("Selected Message ");
+                        Serial.println(selectedMessage);
+                        Serial.print("Scroll offset: ");
+                        Serial.println(scrollOffset);
                       }
                     } else {
                       // No messages, just toggle between Add and Remove
@@ -1530,9 +1550,29 @@ void readButtons() {
                         // On Remove button, next goes to first message
                         selectedAddRemove = 2;
                         selectedMessage = 0;
+                        // Update scroll offset to show the first message
+                        scrollOffset = 0;
+                        Serial.print("Selected Message ");
+                        Serial.println(selectedMessage);
+                        Serial.print("Scroll offset: ");
+                        Serial.println(scrollOffset);
                       } else {
-                        // Normal message navigation
+                        // Normal message navigation - increment message index
                         selectedMessage = (selectedMessage + 1) % messageCount[selectedPot];
+                        // Update scroll offset to keep selected message visible
+                        if (selectedMessage < scrollOffset) {
+                          // Selected message is above visible area, scroll up
+                          scrollOffset = selectedMessage;
+                        } else if (selectedMessage >= scrollOffset + MAX_VISIBLE_MESSAGES) {
+                          // Selected message is below visible area, scroll down
+                          scrollOffset = selectedMessage - MAX_VISIBLE_MESSAGES + 1;
+                        }
+                        // Constrain scroll offset
+                        scrollOffset = constrain(scrollOffset, 0, max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES));
+                        Serial.print("Selected Message ");
+                        Serial.println(selectedMessage);
+                        Serial.print("Scroll offset: ");
+                        Serial.println(scrollOffset);
                       }
                     } else {
                       // No messages, just toggle between Add and Remove
@@ -1576,8 +1616,18 @@ void readButtons() {
               if (prevButtonPressed && enterButtonHeld && currentScreen == ASSIGN_SCREEN && !inAddRemoveOperation) {
                 if (messageCount[selectedPot] > 0) {
                   selectedMessage = (selectedMessage - 1 + messageCount[selectedPot]) % messageCount[selectedPot];
+                  // Update scroll offset based on new selected message
+                  if (selectedMessage < scrollOffset) {
+                    scrollOffset = selectedMessage;
+                  } else if (selectedMessage >= scrollOffset + MAX_VISIBLE_MESSAGES) {
+                    scrollOffset = selectedMessage - MAX_VISIBLE_MESSAGES + 1;
+                  }
+                  // Constrain scroll offset
+                  scrollOffset = constrain(scrollOffset, 0, max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES));
                   Serial.print("Selected Message ");
                   Serial.println(selectedMessage);
+                  Serial.print("Scroll offset: ");
+                  Serial.println(scrollOffset);
                 }
               }
               prevButtonPressed = false;
@@ -1587,8 +1637,18 @@ void readButtons() {
               if (nextButtonPressed && enterButtonHeld && currentScreen == ASSIGN_SCREEN && !inAddRemoveOperation) {
                 if (messageCount[selectedPot] > 0) {
                   selectedMessage = (selectedMessage + 1) % messageCount[selectedPot];
+                  // Update scroll offset based on new selected message
+                  if (selectedMessage < scrollOffset) {
+                    scrollOffset = selectedMessage;
+                  } else if (selectedMessage >= scrollOffset + MAX_VISIBLE_MESSAGES) {
+                    scrollOffset = selectedMessage - MAX_VISIBLE_MESSAGES + 1;
+                  }
+                  // Constrain scroll offset
+                  scrollOffset = constrain(scrollOffset, 0, max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES));
                   Serial.print("Selected Message ");
                   Serial.println(selectedMessage);
+                  Serial.print("Scroll offset: ");
+                  Serial.println(scrollOffset);
                 }
               }
               nextButtonPressed = false;
@@ -1753,7 +1813,16 @@ void addMidiControl() {
     potMessages[selectedPot][messageCount[selectedPot]].maxValue = 127;
     potMessages[selectedPot][messageCount[selectedPot]].value = potState[selectedPot];
     messageCount[selectedPot]++;
-    scrollOffset = max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES);
+
+    // Update scroll offset to show the newly added message
+    if (messageCount[selectedPot] > MAX_VISIBLE_MESSAGES) {
+      scrollOffset = messageCount[selectedPot] - MAX_VISIBLE_MESSAGES;
+    } else {
+      scrollOffset = 0;
+    }
+
+    // Select the newly added message
+    selectedMessage = messageCount[selectedPot] - 1;
 
     Serial.print("Added new MIDI message to pot ");
     Serial.print(selectedPot);
@@ -1763,7 +1832,6 @@ void addMidiControl() {
     Serial.println("Maximum messages reached for this pot");
   }
 }
-
 // *********************** //
 // REMOVE MIDI CONTROL FNC
 // *********************** //
@@ -1774,15 +1842,21 @@ void removeMidiControl() {
       potMessages[selectedPot][i] = potMessages[selectedPot][i + 1];
     }
     messageCount[selectedPot]--;
-    if (selectedMessage >= messageCount[selectedPot]) {
-      selectedMessage = messageCount[selectedPot] - 1;
-    }
-    scrollOffset = min(scrollOffset, max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES));
 
-    // ADJUST SELECTED MESSAGE IF NEEDED
+    // Adjust selected message if needed
     if (selectedMessage >= messageCount[selectedPot]) {
       selectedMessage = messageCount[selectedPot] - 1;
     }
+
+    // Update scroll offset
+    if (selectedMessage < scrollOffset) {
+      scrollOffset = selectedMessage;
+    } else if (selectedMessage >= scrollOffset + MAX_VISIBLE_MESSAGES) {
+      scrollOffset = selectedMessage - MAX_VISIBLE_MESSAGES + 1;
+    }
+
+    // Ensure scroll offset stays within valid range
+    scrollOffset = constrain(scrollOffset, 0, max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES));
 
     Serial.print("Removed MIDI message from pot ");
     Serial.print(selectedPot);
@@ -1938,12 +2012,19 @@ void drawAssignScreen() {
     display.print(selectedPot + 1);
   }
 
-  // CALCULATE SCROLL OFFSET
+  // Ensure scroll offset is within valid range
+  int maxOffset = max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES);
+  scrollOffset = constrain(scrollOffset, 0, maxOffset);
+  
+  // Also ensure selected message is visible by adjusting scroll offset if needed
   if (selectedMessage < scrollOffset) {
     scrollOffset = selectedMessage;
   } else if (selectedMessage >= scrollOffset + MAX_VISIBLE_MESSAGES) {
     scrollOffset = selectedMessage - MAX_VISIBLE_MESSAGES + 1;
   }
+  
+  // Re-constrain after adjustments
+  scrollOffset = constrain(scrollOffset, 0, maxOffset);
 
   // DISPLAY MIDI MESSAGES UP TO MAX_VISIBLE_MESSAGES
   for (int i = 0; i < MAX_VISIBLE_MESSAGES; i++) {
@@ -3071,16 +3152,16 @@ void factoryReset() {
 
   // Reset display settings
   displayInverted = false;
-  
+
   // Reset current state slot
   currentStateSlot = -1;
-  
+
   // Reset edit pot selection
   editPotSelection = 7;  // Default to pot 8
 
   // Save factory reset settings to EEPROM
   saveGlobalSettingsToEEPROM();  // This saves displayInverted and editPotSelection
-  saveStateToSlot(0);  // Save to slot 0 (this will NOT call saveGlobalSettingsToEEPROM now)
+  saveStateToSlot(0);            // Save to slot 0 (this will NOT call saveGlobalSettingsToEEPROM now)
 
   // Clear all other state slots
   for (int slot = 1; slot < NUM_STATE_SLOTS; slot++) {
@@ -3477,7 +3558,7 @@ void initController() {
                                               potMessages[i][j].minValue,
                                               potMessages[i][j].maxValue,
                                               potMessages[i][j].inverted);
-      
+
       if (potMessages[i][j].channel == 16) {  // OMNI
         for (byte ch = 0; ch < 16; ch++) {
           MIDI.sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
@@ -3517,12 +3598,12 @@ void initController() {
       }
     }
   }
-  
+
   // Final loading bar completion
   display.fillRoundRect(19, 40, 94, 4, 1, 0);
   display.display();
   delay(500);
-  
+
   // Apply display inversion setting (already loaded from EEPROM)
   if (displayInverted) {
     display.invertDisplay(true);
@@ -3531,7 +3612,7 @@ void initController() {
     display.invertDisplay(false);
     Serial.println("Display inversion DISABLED");
   }
-  
+
   Serial.println("=== BOOTUP COMPLETE ===");
 }
 
