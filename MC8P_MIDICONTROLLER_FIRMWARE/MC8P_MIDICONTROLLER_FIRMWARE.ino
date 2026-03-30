@@ -610,30 +610,60 @@ void readButtons() {
                 currentScreen = MENU_SCREEN;
                 selectedMenuItem = 0;  // Reset to first menu item
                 Serial.println("ASSIGN pressed - switching to MENU_SCREEN");
-              } else if (currentScreen == MENU_SCREEN) {
+              } 
+              else if (currentScreen == MENU_SCREEN) {
                 // From MENU_SCREEN, ASSIGN button goes back to MAIN_SCREEN
                 currentScreen = MAIN_SCREEN;
                 Serial.println("ASSIGN pressed - returning to MAIN_SCREEN");
-              } else if (currentScreen == ASSIGN_SCREEN && buttonState[1] == LOW && buttonState[2] == LOW && buttonState[3] == LOW) {
-                // Single press on ASSIGN_SCREEN now shows confirmation popup
-                currentScreen = CONFIRM_ASSIGN_SAVE_SCREEN;
-                confirmAssignSave = true;  // Default to Yes
-                Serial.println("ASSIGN pressed - showing save confirmation");
-              } else if (currentScreen == CONFIRM_ASSIGN_SAVE_SCREEN) {
+              } 
+              else if (currentScreen == ASSIGN_SCREEN) {
+                // New ASSIGN button behavior for ASSIGN_SCREEN
+                if (assignEditMode == ASSIGN_POT_SELECT && !assignEditingMode) {
+                  // In POT_SELECT mode - show confirmation popup to save
+                  currentScreen = CONFIRM_ASSIGN_SAVE_SCREEN;
+                  confirmAssignSave = true;  // Default to Yes
+                  Serial.println("ASSIGN pressed in POT_SELECT mode - showing save confirmation");
+                }
+                else if (assignEditMode == ASSIGN_MESSAGE_SELECT && !assignEditingMode) {
+                  // In MESSAGE_SELECT mode - go back to POT_SELECT mode
+                  assignEditMode = ASSIGN_POT_SELECT;
+                  selectedMessage = 0;
+                  scrollOffset = 0;
+                  selectedAddRemove = 2;  // Reset to message selection
+                  Serial.println("ASSIGN pressed in MESSAGE_SELECT mode - returning to POT_SELECT mode");
+                }
+                else if (assignEditingMode) {
+                  // In any EDIT mode (CHANNEL, CC, MIN, MAX, INVERT) - go back to MESSAGE_SELECT mode
+                  assignEditingMode = false;
+                  assignEditMode = ASSIGN_MESSAGE_SELECT;
+                  selectedAddRemove = 2;  // Reset to message selection
+                  Serial.println("ASSIGN pressed in EDIT mode - returning to MESSAGE_SELECT mode");
+                }
+                else {
+                  // Default behavior for any other state
+                  currentScreen = CONFIRM_ASSIGN_SAVE_SCREEN;
+                  confirmAssignSave = true;
+                  Serial.println("ASSIGN pressed - showing save confirmation");
+                }
+              }
+              else if (currentScreen == CONFIRM_ASSIGN_SAVE_SCREEN) {
                 // On the confirm screen, ASSIGN button cancels and returns to ASSIGN_SCREEN
                 currentScreen = ASSIGN_SCREEN;
                 Serial.println("ASSIGN pressed - returning to ASSIGN_SCREEN");
-              } else if (currentScreen == STATES_SCREEN) {
+              } 
+              else if (currentScreen == STATES_SCREEN) {
                 // From STATES_SCREEN, ASSIGN button goes back to MENU_SCREEN
                 currentScreen = MENU_SCREEN;
                 selectedMenuItem = 1;  // Keep States selected in menu
                 Serial.println("ASSIGN pressed - returning to MENU_SCREEN from STATES_SCREEN");
-              } else if (currentScreen == SETTINGS_SCREEN) {
+              } 
+              else if (currentScreen == SETTINGS_SCREEN) {
                 // From SETTINGS_SCREEN, ASSIGN button goes back to MENU_SCREEN
                 currentScreen = MENU_SCREEN;
                 selectedMenuItem = 2;  // Keep Settings selected in menu
                 Serial.println("ASSIGN pressed - returning to MENU_SCREEN from SETTINGS_SCREEN");
-              } else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
+              } 
+              else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
                 if (editingDisplaySetting) {
                   // Exit edit mode without saving changes - revert to original value
                   editingDisplaySetting = false;
@@ -646,37 +676,44 @@ void readButtons() {
                   selectedMenuItem = 0;  // Keep Display selected in settings menu
                   Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN from DISPLAY_SETTINGS_SCREEN");
                 }
-              } else if (currentScreen == ABOUT_SCREEN) {
+              } 
+              else if (currentScreen == ABOUT_SCREEN) {
                 // From ABOUT_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
                 currentScreen = SETTINGS_SCREEN;
                 selectedMenuItem = 1;  // Keep About selected in settings menu
                 Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN from ABOUT_SCREEN");
-              } else if (currentScreen == RESET_SCREEN) {
+              } 
+              else if (currentScreen == RESET_SCREEN) {
                 // From RESET_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
                 currentScreen = SETTINGS_SCREEN;
                 selectedMenuItem = 2;  // Keep Factory Reset selected in settings menu
                 Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN from RESET_SCREEN");
-              } else if (currentScreen == CONFIRM_RESET_SCREEN) {
+              } 
+              else if (currentScreen == CONFIRM_RESET_SCREEN) {
                 // Cancel reset and return to SETTINGS_SCREEN
                 currentScreen = SETTINGS_SCREEN;
                 selectedMenuItem = 2;  // Keep Factory Reset selected
                 Serial.println("ASSIGN pressed - Factory reset cancelled, returning to SETTINGS_SCREEN");
-              } else if (currentScreen == SAVE_STATES_SCREEN) {
+              } 
+              else if (currentScreen == SAVE_STATES_SCREEN) {
                 // From SAVE_STATES_SCREEN, ASSIGN button goes back to STATES_SCREEN
                 currentScreen = STATES_SCREEN;
                 selectedMenuItem = 0;  // Reset to first menu item
                 Serial.println("ASSIGN pressed - returning to STATES_SCREEN from SAVE_STATES_SCREEN");
-              } else if (currentScreen == LOAD_STATES_SCREEN) {
+              } 
+              else if (currentScreen == LOAD_STATES_SCREEN) {
                 // From LOAD_STATES_SCREEN, ASSIGN button goes back to STATES_SCREEN
                 currentScreen = STATES_SCREEN;
                 selectedMenuItem = 0;
                 Serial.println("ASSIGN pressed - returning to STATES_SCREEN from LOAD_STATES_SCREEN");
-              } else if (currentScreen == CLEAR_STATES_SCREEN) {
+              } 
+              else if (currentScreen == CLEAR_STATES_SCREEN) {
                 // From CLEAR_STATES_SCREEN, ASSIGN button goes back to STATES_SCREEN
                 currentScreen = STATES_SCREEN;
                 selectedMenuItem = 0;
                 Serial.println("ASSIGN pressed - returning to STATES_SCREEN from CLEAR_STATES_SCREEN");
-              } else if (currentScreen == CONFIRM_SAVE_SCREEN) {
+              } 
+              else if (currentScreen == CONFIRM_SAVE_SCREEN) {
                 // Cancel save and return to SAVE_STATES_SCREEN
                 currentScreen = SAVE_STATES_SCREEN;
                 Serial.println("ASSIGN pressed - Save cancelled, returning to SAVE_STATES_SCREEN");
@@ -1504,9 +1541,6 @@ void readButtons() {
       }
     }
   }
-
-  // REMOVED: ADD NEW MIDI CONTROL TO POT (ENTER+NEXT combination)
-  // REMOVED: REMOVE NEW MIDI CONTROL TO POT (ENTER+PREV combination)
 
   // *********************** //
   // RESET ALL MIDI CONTROL SETTINGS
