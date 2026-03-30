@@ -118,6 +118,7 @@ enum ScreenState { MAIN_SCREEN,
                    ASSIGN_SCREEN,
                    STATES_SCREEN,
                    SETTINGS_SCREEN,
+                   ASSIGN_SETTINGS_SCREEN,
                    DISPLAY_SETTINGS_SCREEN,
                    ABOUT_SCREEN,
                    RESET_SCREEN,
@@ -145,6 +146,10 @@ AssignEditMode assignEditMode = ASSIGN_POT_SELECT;
 bool assignEditingMode = false;  // True when editing values, false when selecting
 unsigned long assignFlashTimer = 0;
 bool assignFlashState = false;
+
+// ASSIGN SETTINGS
+int editPotSelection = 7;           // Default to pot 8 (index 7)
+bool editingAssignSetting = false;  // Flag for edit mode
 
 // DISPLAY SETTINGS
 bool displayInverted = false;          // Default: No
@@ -259,6 +264,7 @@ struct GlobalSettings {
   uint8_t version;
   bool displayInverted;
   int lastLoadedState;
+  int editPot;
 };
 
 // Version constants
@@ -344,7 +350,7 @@ int selectedAddRemove = 0;  // 0 = Add, 1 = Remove
 
 int lastPot8Value = -1;
 unsigned long lastPot8ChangeTime = 0;
-const unsigned long pot8DebounceDelay = 50; // Debounce delay in ms
+const unsigned long pot8DebounceDelay = 50;  // Debounce delay in ms
 
 // ***** //
 // SETUP
@@ -539,7 +545,6 @@ void loop() {
   // Handle parameter editing with potentiometer 8
   handleParameterEditWithPot();
 
-  // Draw the appropriate screen
   if (currentScreen == MAIN_SCREEN) {
     drawMainScreen();
   } else if (currentScreen == MENU_SCREEN) {
@@ -550,12 +555,14 @@ void loop() {
     drawStatesMenuScreen();
   } else if (currentScreen == SETTINGS_SCREEN) {
     drawSettingsMenuScreen();
+  } else if (currentScreen == ASSIGN_SETTINGS_SCREEN) {  // NEW
+    drawAssignSettingsScreen();
   } else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
     drawDisplaySettings();
   } else if (currentScreen == ABOUT_SCREEN) {
     drawAboutScreen();
   } else if (currentScreen == RESET_SCREEN) {
-    drawConfirmResetPopup(); 
+    drawConfirmResetPopup();
   } else if (currentScreen == SAVE_STATES_SCREEN) {
     drawSaveStates();
   } else if (currentScreen == LOAD_STATES_SCREEN) {
@@ -651,6 +658,18 @@ void readButtons() {
                 currentScreen = ASSIGN_SCREEN;
                 Serial.println("ASSIGN pressed - returning to ASSIGN_SCREEN");
               } 
+              else if (currentScreen == ASSIGN_SETTINGS_SCREEN) {
+                if (editingAssignSetting) {
+                  // Exit edit mode without saving changes
+                  editingAssignSetting = false;
+                  Serial.println("ASSIGN pressed - exiting edit mode without saving");
+                } else {
+                  // Go back to SETTINGS_SCREEN
+                  currentScreen = SETTINGS_SCREEN;
+                  selectedMenuItem = 0;  // Keep Assign Settings selected
+                  Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN");
+                }
+              }
               else if (currentScreen == STATES_SCREEN) {
                 // From STATES_SCREEN, ASSIGN button goes back to MENU_SCREEN
                 currentScreen = MENU_SCREEN;
@@ -673,26 +692,26 @@ void readButtons() {
                 } else {
                   // From DISPLAY_SETTINGS_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
                   currentScreen = SETTINGS_SCREEN;
-                  selectedMenuItem = 0;  // Keep Display selected in settings menu
+                  selectedMenuItem = 1;  // Keep Display selected in settings menu
                   Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN from DISPLAY_SETTINGS_SCREEN");
                 }
               } 
               else if (currentScreen == ABOUT_SCREEN) {
                 // From ABOUT_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
                 currentScreen = SETTINGS_SCREEN;
-                selectedMenuItem = 1;  // Keep About selected in settings menu
+                selectedMenuItem = 2;  // Keep About selected in settings menu
                 Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN from ABOUT_SCREEN");
               } 
               else if (currentScreen == RESET_SCREEN) {
                 // From RESET_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
                 currentScreen = SETTINGS_SCREEN;
-                selectedMenuItem = 2;  // Keep Factory Reset selected in settings menu
+                selectedMenuItem = 3;  // Keep Factory Reset selected in settings menu
                 Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN from RESET_SCREEN");
               } 
               else if (currentScreen == CONFIRM_RESET_SCREEN) {
                 // Cancel reset and return to SETTINGS_SCREEN
                 currentScreen = SETTINGS_SCREEN;
-                selectedMenuItem = 2;  // Keep Factory Reset selected
+                selectedMenuItem = 3;  // Keep Factory Reset selected
                 Serial.println("ASSIGN pressed - Factory reset cancelled, returning to SETTINGS_SCREEN");
               } 
               else if (currentScreen == SAVE_STATES_SCREEN) {
@@ -775,7 +794,13 @@ void readButtons() {
               // SETTINGS SCREEN - CONFIRM SELECTION
               else if (currentScreen == SETTINGS_SCREEN) {
                 switch (selectedMenuItem) {
-                  case 0:  // Display
+                  case 0:  // Assign Settings
+                    currentScreen = ASSIGN_SETTINGS_SCREEN;
+                    selectedMenuItem = 0;  // Reset selection
+                    editingAssignSetting = false;
+                    Serial.println("ENTER pressed - switching to ASSIGN_SETTINGS_SCREEN");
+                    break;
+                  case 1:  // Display
                     currentScreen = DISPLAY_SETTINGS_SCREEN;
                     selectedMenuItem = 0;                       // Reset selection for Display settings
                     editingDisplaySetting = false;              // Ensure not in edit mode when entering
@@ -783,16 +808,32 @@ void readButtons() {
                     Serial.print("ENTER pressed - switching to DISPLAY_SETTINGS_SCREEN, current invert: ");
                     Serial.println(displayInverted ? "YES" : "NO");
                     break;
-                  case 1:  // About
+                  case 2:  // About
                     currentScreen = ABOUT_SCREEN;
                     selectedMenuItem = 0;  // Reset selection for About screen
                     Serial.println("ENTER pressed - switching to ABOUT_SCREEN");
                     break;
-                  case 2:  // Factory Reset
+                  case 3:  // Factory Reset
                     currentScreen = CONFIRM_RESET_SCREEN;
                     confirmSelection = true;  // Default to Yes
                     Serial.println("ENTER pressed - switching to CONFIRM_RESET_SCREEN");
                     break;
+                }
+              }
+
+              // ASSIGN SETTINGS SCREEN
+              else if (currentScreen == ASSIGN_SETTINGS_SCREEN) {
+                if (editingAssignSetting) {
+                  // Exit edit mode and save setting
+                  editingAssignSetting = false;
+                  // Save to global settings
+                  Serial.print("Assign Settings - Edit Pot saved as: Pot ");
+                  Serial.println(editPotSelection + 1);
+                  saveGlobalSettingsToEEPROM();
+                } else {
+                  // Enter edit mode
+                  editingAssignSetting = true;
+                  Serial.println("Assign Settings - EDIT MODE ACTIVATED");
                 }
               }
 
@@ -930,7 +971,7 @@ void readButtons() {
                   // User selected NO - cancel reset
                   Serial.println("CONFIRM - Factory reset cancelled");
                   currentScreen = SETTINGS_SCREEN;
-                  selectedMenuItem = 2;  // Keep Factory Reset selected
+                  selectedMenuItem = 3;  // Keep Factory Reset selected
                   Serial.println("Returning to SETTINGS_SCREEN");
                 }
               }
@@ -1056,13 +1097,23 @@ void readButtons() {
               // SETTINGS SCREEN NAVIGATION
               // *********************** //
               else if (currentScreen == SETTINGS_SCREEN) {
-                selectedMenuItem = (selectedMenuItem - 1 + 3) % 3;  // Now 3 settings menu items
+                selectedMenuItem = (selectedMenuItem - 1 + 4) % 4;  // Now 4 settings menu items
                 Serial.print("Settings menu selection: ");
                 switch (selectedMenuItem) {
-                  case 0: Serial.println("Display"); break;
-                  case 1: Serial.println("About"); break;
-                  case 2: Serial.println("Factory Reset"); break;
+                  case 0: Serial.println("Assign Settings"); break;
+                  case 1: Serial.println("Display"); break;
+                  case 2: Serial.println("About"); break;
+                  case 3: Serial.println("Factory Reset"); break;
                 }
+              }
+
+              // *********************** //
+              // ASSIGN SETTINGS SCREEN NAVIGATION
+              // *********************** //
+              else if (currentScreen == ASSIGN_SETTINGS_SCREEN && editingAssignSetting) {
+                editPotSelection = (editPotSelection - 1 + N_POTS) % N_POTS;
+                Serial.print("Edit Pot set to: Pot ");
+                Serial.println(editPotSelection + 1);
               }
 
               // *********************** //
@@ -1285,13 +1336,23 @@ void readButtons() {
               // SETTINGS SCREEN NAVIGATION
               // *********************** //
               else if (currentScreen == SETTINGS_SCREEN) {
-                selectedMenuItem = (selectedMenuItem + 1) % 3;  // Now 3 settings menu items
+                selectedMenuItem = (selectedMenuItem + 1) % 4;  // Now 4 settings menu items
                 Serial.print("Settings menu selection: ");
                 switch (selectedMenuItem) {
-                  case 0: Serial.println("Display"); break;
-                  case 1: Serial.println("About"); break;
-                  case 2: Serial.println("Factory Reset"); break;
+                  case 0: Serial.println("Assign Settings"); break;
+                  case 1: Serial.println("Display"); break;
+                  case 2: Serial.println("About"); break;
+                  case 3: Serial.println("Factory Reset"); break;
                 }
+              }
+
+              // *********************** //
+              // ASSIGN SETTINGS SCREEN NAVIGATION
+              // *********************** //
+              else if (currentScreen == ASSIGN_SETTINGS_SCREEN && editingAssignSetting) {
+                editPotSelection = (editPotSelection + 1) % N_POTS;
+                Serial.print("Edit Pot set to: Pot ");
+                Serial.println(editPotSelection + 1);
               }
 
               // *********************** //
@@ -1891,17 +1952,17 @@ void drawAssignScreen() {
 
       display.setCursor(8, yPos);
 
-      // DISPLAY MIDI MESSAGES 
+      // DISPLAY MIDI MESSAGES
       // FORMAT: Ch X | CC X | 0-127 | NOR
       display.print("Ch ");
-      
+
       // Handle OMNI option (channel 17 = OMNI)
       if (potMessages[selectedPot][messageIndex].channel == 16) {  // 16 = OMNI in 0-based index
         display.print("OMNI");
       } else {
         display.print(potMessages[selectedPot][messageIndex].channel + 1);
       }
-      
+
       display.print(" | CC ");
       display.print(potMessages[selectedPot][messageIndex].cc);
       display.print(" | ");
@@ -1909,7 +1970,7 @@ void drawAssignScreen() {
       display.print("-");
       display.print(potMessages[selectedPot][messageIndex].maxValue);
       display.print(" | ");
-      
+
       // Show direction (NOR or INV)
       if (potMessages[selectedPot][messageIndex].inverted) {
         display.print("INV");
@@ -1920,113 +1981,115 @@ void drawAssignScreen() {
       // Show parameter edit indicator for selected message when in edit mode
       if (messageIndex == selectedMessage && assignEditingMode) {
         // Calculate the X position and width for each parameter
-        int editX = 8; // Start after the cursor position
+        int editX = 8;  // Start after the cursor position
         int parameterWidth = 0;
-        
+
         // First, we need to calculate the X position by measuring the text before the parameter
         switch (assignEditMode) {
-          case ASSIGN_EDIT_CHANNEL: {
-            // Measure "Ch " prefix
-            String prefix = "Ch ";
-            int16_t x1, y1;
-            uint16_t w, h;
-            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
-            editX = 8 + w;
-            
-            // Get the channel string to measure its width
-            String channelStr;
-            if (potMessages[selectedPot][selectedMessage].channel == 16) {
-              channelStr = "OMNI";
-            } else {
-              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+          case ASSIGN_EDIT_CHANNEL:
+            {
+              // Measure "Ch " prefix
+              String prefix = "Ch ";
+              int16_t x1, y1;
+              uint16_t w, h;
+              display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+              editX = 8 + w;
+
+              // Get the channel string to measure its width
+              String channelStr;
+              if (potMessages[selectedPot][selectedMessage].channel == 16) {
+                channelStr = "OMNI";
+              } else {
+                channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+              }
+              display.getTextBounds(channelStr, 0, 0, &x1, &y1, &w, &h);
+              parameterWidth = w;
+              break;
             }
-            display.getTextBounds(channelStr, 0, 0, &x1, &y1, &w, &h);
-            parameterWidth = w;
-            break;
-          }
-          case ASSIGN_EDIT_CC: {
-            // Measure "Ch X | CC " prefix
-            String channelStr;
-            if (potMessages[selectedPot][selectedMessage].channel == 16) {
-              channelStr = "OMNI";
-            } else {
-              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+          case ASSIGN_EDIT_CC:
+            {
+              // Measure "Ch X | CC " prefix
+              String channelStr;
+              if (potMessages[selectedPot][selectedMessage].channel == 16) {
+                channelStr = "OMNI";
+              } else {
+                channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+              }
+              String prefix = "Ch " + channelStr + " | CC ";
+              int16_t x1, y1;
+              uint16_t w, h;
+              display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+              editX = 8 + w;
+
+              // Get the CC value string width
+              String ccStr = String(potMessages[selectedPot][selectedMessage].cc);
+              display.getTextBounds(ccStr, 0, 0, &x1, &y1, &w, &h);
+              parameterWidth = w;
+              break;
             }
-            String prefix = "Ch " + channelStr + " | CC ";
-            int16_t x1, y1;
-            uint16_t w, h;
-            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
-            editX = 8 + w;
-            
-            // Get the CC value string width
-            String ccStr = String(potMessages[selectedPot][selectedMessage].cc);
-            display.getTextBounds(ccStr, 0, 0, &x1, &y1, &w, &h);
-            parameterWidth = w;
-            break;
-          }
-          case ASSIGN_EDIT_MIN: {
-            // Measure up to the min value
-            String channelStr;
-            if (potMessages[selectedPot][selectedMessage].channel == 16) {
-              channelStr = "OMNI";
-            } else {
-              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+          case ASSIGN_EDIT_MIN:
+            {
+              // Measure up to the min value
+              String channelStr;
+              if (potMessages[selectedPot][selectedMessage].channel == 16) {
+                channelStr = "OMNI";
+              } else {
+                channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+              }
+              String prefix = "Ch " + channelStr + " | CC " + String(potMessages[selectedPot][selectedMessage].cc) + " | ";
+              int16_t x1, y1;
+              uint16_t w, h;
+              display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+              editX = 8 + w;
+
+              // Get the min value string width
+              String minStr = String(potMessages[selectedPot][selectedMessage].minValue);
+              display.getTextBounds(minStr, 0, 0, &x1, &y1, &w, &h);
+              parameterWidth = w;
+              break;
             }
-            String prefix = "Ch " + channelStr + " | CC " + String(potMessages[selectedPot][selectedMessage].cc) + " | ";
-            int16_t x1, y1;
-            uint16_t w, h;
-            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
-            editX = 8 + w;
-            
-            // Get the min value string width
-            String minStr = String(potMessages[selectedPot][selectedMessage].minValue);
-            display.getTextBounds(minStr, 0, 0, &x1, &y1, &w, &h);
-            parameterWidth = w;
-            break;
-          }
-          case ASSIGN_EDIT_MAX: {
-            // Measure up to the max value (including the dash)
-            String channelStr;
-            if (potMessages[selectedPot][selectedMessage].channel == 16) {
-              channelStr = "OMNI";
-            } else {
-              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+          case ASSIGN_EDIT_MAX:
+            {
+              // Measure up to the max value (including the dash)
+              String channelStr;
+              if (potMessages[selectedPot][selectedMessage].channel == 16) {
+                channelStr = "OMNI";
+              } else {
+                channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+              }
+              String prefix = "Ch " + channelStr + " | CC " + String(potMessages[selectedPot][selectedMessage].cc) + " | " + String(potMessages[selectedPot][selectedMessage].minValue) + "-";
+              int16_t x1, y1;
+              uint16_t w, h;
+              display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+              editX = 8 + w;
+
+              // Get the max value string width
+              String maxStr = String(potMessages[selectedPot][selectedMessage].maxValue);
+              display.getTextBounds(maxStr, 0, 0, &x1, &y1, &w, &h);
+              parameterWidth = w;
+              break;
             }
-            String prefix = "Ch " + channelStr + " | CC " + String(potMessages[selectedPot][selectedMessage].cc) + " | " + 
-                           String(potMessages[selectedPot][selectedMessage].minValue) + "-";
-            int16_t x1, y1;
-            uint16_t w, h;
-            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
-            editX = 8 + w;
-            
-            // Get the max value string width
-            String maxStr = String(potMessages[selectedPot][selectedMessage].maxValue);
-            display.getTextBounds(maxStr, 0, 0, &x1, &y1, &w, &h);
-            parameterWidth = w;
-            break;
-          }
-          case ASSIGN_EDIT_INVERT: {
-            // Measure up to the direction (including the " | " before it)
-            String channelStr;
-            if (potMessages[selectedPot][selectedMessage].channel == 16) {
-              channelStr = "OMNI";
-            } else {
-              channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+          case ASSIGN_EDIT_INVERT:
+            {
+              // Measure up to the direction (including the " | " before it)
+              String channelStr;
+              if (potMessages[selectedPot][selectedMessage].channel == 16) {
+                channelStr = "OMNI";
+              } else {
+                channelStr = String(potMessages[selectedPot][selectedMessage].channel + 1);
+              }
+              String prefix = "Ch " + channelStr + " | CC " + String(potMessages[selectedPot][selectedMessage].cc) + " | " + String(potMessages[selectedPot][selectedMessage].minValue) + "-" + String(potMessages[selectedPot][selectedMessage].maxValue) + " | ";
+              int16_t x1, y1;
+              uint16_t w, h;
+              display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
+              editX = 8 + w;
+
+              // Get the direction string width
+              String dirStr = potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR";
+              display.getTextBounds(dirStr, 0, 0, &x1, &y1, &w, &h);
+              parameterWidth = w;
+              break;
             }
-            String prefix = "Ch " + channelStr + " | CC " + String(potMessages[selectedPot][selectedMessage].cc) + " | " +
-                           String(potMessages[selectedPot][selectedMessage].minValue) + "-" + 
-                           String(potMessages[selectedPot][selectedMessage].maxValue) + " | ";
-            int16_t x1, y1;
-            uint16_t w, h;
-            display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
-            editX = 8 + w;
-            
-            // Get the direction string width
-            String dirStr = potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR";
-            display.getTextBounds(dirStr, 0, 0, &x1, &y1, &w, &h);
-            parameterWidth = w;
-            break;
-          }
         }
 
         // Flash the parameter being edited
@@ -2035,7 +2098,7 @@ void drawAssignScreen() {
           display.setTextColor(bgColor);
           // Redraw the parameter with highlighted background
           display.setCursor(editX + 1, yPos);
-          
+
           // Redraw just the parameter being edited
           switch (assignEditMode) {
             case ASSIGN_EDIT_CHANNEL:
@@ -2070,13 +2133,13 @@ void drawAssignScreen() {
 
   // Draw Add/Remove buttons at the bottom
   int buttonYPos = 56;
-  
+
   // Get text widths for positioning
   int16_t x1, y1;
   uint16_t w, h, w2, h2;
   display.getTextBounds("+ Add", 0, 0, &x1, &y1, &w, &h);
   display.getTextBounds("- Remove", 0, 0, &x1, &y1, &w2, &h2);
-  
+
   // Draw selection indicators for Add/Remove buttons using text brackets
   if ((assignEditMode == ASSIGN_MESSAGE_SELECT || assignEditMode == ASSIGN_ADD_REMOVE) && !assignEditingMode) {
     // Draw Add button with brackets if selected
@@ -2085,7 +2148,7 @@ void drawAssignScreen() {
       int addBracketStart = 4;
       int addButtonX = 8;
       int addBracketEnd = addButtonX + w + 2;
-      
+
       // Draw Add button with brackets that flash
       if ((millis() / 400) % 2 == 0) {
         // Flash state - draw brackets (visible)
@@ -2104,22 +2167,22 @@ void drawAssignScreen() {
         display.setCursor(addBracketEnd, buttonYPos);
         display.print(" ");
       }
-      
+
       // Draw Remove button normally
       display.setCursor(8 + w + 10, buttonYPos);
       display.print("- Remove");
-      
-    } 
+
+    }
     // Draw Remove button with brackets if selected
     else if (selectedAddRemove == 1) {
       int removeX = 8 + w + 10;
       int removeBracketStart = removeX - 4;
       int removeBracketEnd = removeX + w2 + 2;
-      
+
       // Draw Add button normally
       display.setCursor(8, buttonYPos);
       display.print("+ Add");
-      
+
       // Draw Remove button with brackets that flash
       if ((millis() / 400) % 2 == 0) {
         // Flash state - draw brackets (visible)
@@ -2138,7 +2201,7 @@ void drawAssignScreen() {
         display.setCursor(removeBracketEnd, buttonYPos);
         display.print(" ");
       }
-      
+
     } else {
       // Neither selected - normal display without brackets
       display.setCursor(8, buttonYPos);
@@ -2557,7 +2620,6 @@ void drawConfirmSavePopup() {
 
   display.display();
 }
-
 // *********************** //
 // DRAW CONFIRM ASSIGN SAVE POPUP //
 // *********************** //
@@ -2645,7 +2707,6 @@ void drawConfirmAssignSavePopup() {
 
   display.display();
 }
-
 // *********************** //
 // DRAW SETTINGS MENU      //
 // *********************** //
@@ -2667,17 +2728,71 @@ void drawSettingsMenuScreen() {
   display.setCursor(6, 11);
   display.println("Settings");
 
-  // MENU OPTIONS - Now 3 items
+  // MENU OPTIONS - Now 4 items
   display.setCursor(5, 25);
-  display.println("- Display");
+  display.println("- Assign Settings");
   display.setCursor(5, 35);
-  display.println("- About");
+  display.println("- Display");
   display.setCursor(5, 45);
+  display.println("- About");
+  display.setCursor(5, 55);
   display.println("- Factory Reset");
 
   // Draw the bitmap indicator based on selection
   int indicatorY = 21 + (selectedMenuItem * 10);
-  display.drawBitmap(65, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
+  display.drawBitmap(70, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
+
+  display.display();
+}
+// *********************** //
+// DRAW ASSIGN SETTINGS SCREEN
+// *********************** //
+void drawAssignSettingsScreen() {
+  display.clearDisplay();
+
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;
+  int txtColor = displayInverted ? 1 : 0;
+
+  // DRAW UI
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
+
+  display.setTextColor(txtColor);
+  display.setTextSize(1);
+  display.setTextWrap(false);
+  display.setFont(&Picopixel);
+  display.setCursor(6, 11);
+  display.print("Assign Settings");
+
+  // Display the current edit pot selection
+  display.setCursor(5, 30);
+  display.print("Edit Pot:");
+
+  // Display the pot number with selection box
+  int potX = 65;
+  int potY = 28;
+
+  display.setCursor(potX, potY);
+  display.print("Pot ");
+
+  if (editingAssignSetting) {
+    // Flash the selection box when editing
+    if ((millis() / 300) % 2 == 0) {
+      display.fillRoundRect(potX + 15, potY - 6, 7, 9, 1, txtColor);
+      display.setTextColor(bgColor);
+      display.setCursor(potX + 17, potY);
+      display.print(editPotSelection + 1);
+      display.setTextColor(txtColor);
+    } else {
+      display.drawRoundRect(potX + 15, potY - 6, 7, 9, 1, txtColor);
+      display.setCursor(potX + 17, potY);
+      display.print(editPotSelection + 1);
+    }
+  } else {
+    display.setCursor(potX + 17, potY);
+    display.print(editPotSelection + 1);
+  }
 
   display.display();
 }
@@ -2962,6 +3077,7 @@ void factoryReset() {
   scrollOffset = 0;
   assignEditMode = ASSIGN_POT_SELECT;
   assignEditingMode = false;
+  editPotSelection = 7;  // Default to pot 8
 
   Serial.println("Factory reset completed!");
   Serial.println("All pots reset to: Channel 1-8, CC7, Range 0-127, Normal direction");
@@ -2985,6 +3101,7 @@ void saveGlobalSettingsToEEPROM() {
   settings.version = GLOBAL_SETTINGS_VERSION;
   settings.displayInverted = displayInverted;
   settings.lastLoadedState = currentStateSlot;
+  settings.editPot = editPotSelection;  // NEW
 
   EEPROM.put(GLOBAL_EEPROM_ADDR, settings);
 
@@ -2993,6 +3110,8 @@ void saveGlobalSettingsToEEPROM() {
   Serial.println(displayInverted ? "YES" : "NO");
   Serial.print("Last loaded state saved as: ");
   Serial.println(currentStateSlot);
+  Serial.print("Edit pot saved as: Pot ");
+  Serial.println(editPotSelection + 1);
 }
 
 // *********************** //
@@ -3005,6 +3124,12 @@ void loadGlobalSettingsFromEEPROM() {
   if (settings.signature == EEPROM_SIGNATURE && settings.version == GLOBAL_SETTINGS_VERSION) {
     displayInverted = settings.displayInverted;
     currentStateSlot = settings.lastLoadedState;
+    editPotSelection = settings.editPot;  // NEW
+
+    // Validate editPotSelection range
+    if (editPotSelection < 0 || editPotSelection >= N_POTS) {
+      editPotSelection = 7;  // Default to pot 8 if invalid
+    }
 
     // Apply display setting
     if (displayInverted) {
@@ -3018,10 +3143,13 @@ void loadGlobalSettingsFromEEPROM() {
     Serial.println(displayInverted ? "YES" : "NO");
     Serial.print("Last loaded state loaded as: ");
     Serial.println(currentStateSlot);
+    Serial.print("Edit pot loaded as: Pot ");
+    Serial.println(editPotSelection + 1);
   } else {
     Serial.println("No valid global settings found, using defaults");
     displayInverted = false;
     currentStateSlot = -1;
+    editPotSelection = 7;  // Default to pot 8
   }
 }
 
@@ -3382,100 +3510,105 @@ void handleParameterEditWithPot() {
   if (currentScreen != ASSIGN_SCREEN || !assignEditingMode) {
     return;
   }
-  
-  // Read potentiometer 8 (index 7, pin A9)
-  int pot8Raw = analogRead(POT_PIN[7]); // POT_PIN[7] is A9 (potentiometer 8)
-  
+
+  // Read the selected edit potentiometer
+  int pot8Raw = analogRead(POT_PIN[editPotSelection]);
+
   // Update responsive analog reading for smoother values
-  responsivePot[7].update(pot8Raw);
-  int pot8Value = responsivePot[7].getValue();
-  
+  responsivePot[editPotSelection].update(pot8Raw);
+  int potValue = responsivePot[editPotSelection].getValue();
+
   // Debounce: only process if value has changed significantly
-  if (abs(pot8Value - lastPot8Value) > 5) { // 5 is the threshold for significant change
-    lastPot8Value = pot8Value;
+  if (abs(potValue - lastPot8Value) > 5) {
+    lastPot8Value = potValue;
     lastPot8ChangeTime = millis();
-    
+
     // Map to appropriate range based on what we're editing
     bool valueChanged = false;
-    
-    switch(assignEditMode) {
-      case ASSIGN_EDIT_CHANNEL: {
-        // Map 0-1023 to 0-16 (channels 1-16 + OMNI)
-        int newChannel = map(pot8Value, 0, 1023, 0, 16);
-        if (newChannel != potMessages[selectedPot][selectedMessage].channel) {
-          potMessages[selectedPot][selectedMessage].channel = newChannel;
-          valueChanged = true;
-          Serial.print("Channel set to: ");
-          if (potMessages[selectedPot][selectedMessage].channel == 16) {
-            Serial.println("OMNI");
-          } else {
-            Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
+
+    switch (assignEditMode) {
+      case ASSIGN_EDIT_CHANNEL:
+        {
+          // Map 0-1023 to 0-16 (channels 1-16 + OMNI)
+          int newChannel = map(potValue, 0, 1023, 0, 16);
+          if (newChannel != potMessages[selectedPot][selectedMessage].channel) {
+            potMessages[selectedPot][selectedMessage].channel = newChannel;
+            valueChanged = true;
+            Serial.print("Channel set to: ");
+            if (potMessages[selectedPot][selectedMessage].channel == 16) {
+              Serial.println("OMNI");
+            } else {
+              Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
+            }
           }
+          break;
         }
-        break;
-      }
-      
-      case ASSIGN_EDIT_CC: {
-        // Map 0-1023 to 0-127
-        int newCC = map(pot8Value, 0, 1023, 0, 127);
-        if (newCC != potMessages[selectedPot][selectedMessage].cc) {
-          potMessages[selectedPot][selectedMessage].cc = newCC;
-          valueChanged = true;
-          Serial.print("CC set to: ");
-          Serial.println(potMessages[selectedPot][selectedMessage].cc);
-        }
-        break;
-      }
-      
-      case ASSIGN_EDIT_MIN: {
-        // Map 0-1023 to 0-127
-        int newMin = map(pot8Value, 0, 1023, 0, 127);
-        if (newMin != potMessages[selectedPot][selectedMessage].minValue) {
-          potMessages[selectedPot][selectedMessage].minValue = newMin;
-          // Ensure max value is at least min value
-          if (potMessages[selectedPot][selectedMessage].maxValue < newMin) {
-            potMessages[selectedPot][selectedMessage].maxValue = newMin;
+
+      case ASSIGN_EDIT_CC:
+        {
+          // Map 0-1023 to 0-127
+          int newCC = map(potValue, 0, 1023, 0, 127);
+          if (newCC != potMessages[selectedPot][selectedMessage].cc) {
+            potMessages[selectedPot][selectedMessage].cc = newCC;
+            valueChanged = true;
+            Serial.print("CC set to: ");
+            Serial.println(potMessages[selectedPot][selectedMessage].cc);
           }
-          valueChanged = true;
-          Serial.print("Min value set to: ");
-          Serial.println(potMessages[selectedPot][selectedMessage].minValue);
+          break;
         }
-        break;
-      }
-      
-      case ASSIGN_EDIT_MAX: {
-        // Map 0-1023 to 0-127
-        int newMax = map(pot8Value, 0, 1023, 0, 127);
-        if (newMax != potMessages[selectedPot][selectedMessage].maxValue) {
-          potMessages[selectedPot][selectedMessage].maxValue = newMax;
-          // Ensure min value is at most max value
-          if (potMessages[selectedPot][selectedMessage].minValue > newMax) {
-            potMessages[selectedPot][selectedMessage].minValue = newMax;
+
+      case ASSIGN_EDIT_MIN:
+        {
+          // Map 0-1023 to 0-127
+          int newMin = map(potValue, 0, 1023, 0, 127);
+          if (newMin != potMessages[selectedPot][selectedMessage].minValue) {
+            potMessages[selectedPot][selectedMessage].minValue = newMin;
+            // Ensure max value is at least min value
+            if (potMessages[selectedPot][selectedMessage].maxValue < newMin) {
+              potMessages[selectedPot][selectedMessage].maxValue = newMin;
+            }
+            valueChanged = true;
+            Serial.print("Min value set to: ");
+            Serial.println(potMessages[selectedPot][selectedMessage].minValue);
           }
-          valueChanged = true;
-          Serial.print("Max value set to: ");
-          Serial.println(potMessages[selectedPot][selectedMessage].maxValue);
+          break;
         }
-        break;
-      }
-      
-      case ASSIGN_EDIT_INVERT: {
-        // Use potentiometer to toggle between NOR and INV
-        // Map to 0-1, with threshold at 512 (midpoint)
-        bool newInvert = (pot8Value > 512);
-        if (newInvert != potMessages[selectedPot][selectedMessage].inverted) {
-          potMessages[selectedPot][selectedMessage].inverted = newInvert;
-          valueChanged = true;
-          Serial.print("Direction set to: ");
-          Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR");
+
+      case ASSIGN_EDIT_MAX:
+        {
+          // Map 0-1023 to 0-127
+          int newMax = map(potValue, 0, 1023, 0, 127);
+          if (newMax != potMessages[selectedPot][selectedMessage].maxValue) {
+            potMessages[selectedPot][selectedMessage].maxValue = newMax;
+            // Ensure min value is at most max value
+            if (potMessages[selectedPot][selectedMessage].minValue > newMax) {
+              potMessages[selectedPot][selectedMessage].minValue = newMax;
+            }
+            valueChanged = true;
+            Serial.print("Max value set to: ");
+            Serial.println(potMessages[selectedPot][selectedMessage].maxValue);
+          }
+          break;
         }
-        break;
-      }
-      
+
+      case ASSIGN_EDIT_INVERT:
+        {
+          // Use potentiometer to toggle between NOR and INV
+          // Map to 0-1, with threshold at 512 (midpoint)
+          bool newInvert = (potValue > 512);
+          if (newInvert != potMessages[selectedPot][selectedMessage].inverted) {
+            potMessages[selectedPot][selectedMessage].inverted = newInvert;
+            valueChanged = true;
+            Serial.print("Direction set to: ");
+            Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR");
+          }
+          break;
+        }
+
       default:
         break;
     }
-    
+
     // Force screen redraw if value changed
     if (valueChanged) {
       drawAssignScreen();
