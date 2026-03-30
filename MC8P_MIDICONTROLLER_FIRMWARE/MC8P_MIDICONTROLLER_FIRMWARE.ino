@@ -492,8 +492,8 @@ void loop() {
             } else {
               // Normal operation - update and send all messages with range and direction
               for (int j = 0; j < messageCount[i]; j++) {
-                // Apply range and direction to the current MIDI value
-                int finalValue = mapMidiValueWithParams(currentMidiValue[i],
+                // Apply range and direction to the raw potentiometer value (0-1023)
+                int finalValue = mapMidiValueWithParams(potState[i],  // Pass potState (0-1023) instead of currentMidiValue
                                                         potMessages[i][j].minValue,
                                                         potMessages[i][j].maxValue,
                                                         potMessages[i][j].inverted);
@@ -617,48 +617,41 @@ void readButtons() {
                 currentScreen = MENU_SCREEN;
                 selectedMenuItem = 0;  // Reset to first menu item
                 Serial.println("ASSIGN pressed - switching to MENU_SCREEN");
-              } 
-              else if (currentScreen == MENU_SCREEN) {
+              } else if (currentScreen == MENU_SCREEN) {
                 // From MENU_SCREEN, ASSIGN button goes back to MAIN_SCREEN
                 currentScreen = MAIN_SCREEN;
                 Serial.println("ASSIGN pressed - returning to MAIN_SCREEN");
-              } 
-              else if (currentScreen == ASSIGN_SCREEN) {
+              } else if (currentScreen == ASSIGN_SCREEN) {
                 // New ASSIGN button behavior for ASSIGN_SCREEN
                 if (assignEditMode == ASSIGN_POT_SELECT && !assignEditingMode) {
                   // In POT_SELECT mode - show confirmation popup to save
                   currentScreen = CONFIRM_ASSIGN_SAVE_SCREEN;
                   confirmAssignSave = true;  // Default to Yes
                   Serial.println("ASSIGN pressed in POT_SELECT mode - showing save confirmation");
-                }
-                else if (assignEditMode == ASSIGN_MESSAGE_SELECT && !assignEditingMode) {
+                } else if (assignEditMode == ASSIGN_MESSAGE_SELECT && !assignEditingMode) {
                   // In MESSAGE_SELECT mode - go back to POT_SELECT mode
                   assignEditMode = ASSIGN_POT_SELECT;
                   selectedMessage = 0;
                   scrollOffset = 0;
                   selectedAddRemove = 2;  // Reset to message selection
                   Serial.println("ASSIGN pressed in MESSAGE_SELECT mode - returning to POT_SELECT mode");
-                }
-                else if (assignEditingMode) {
+                } else if (assignEditingMode) {
                   // In any EDIT mode (CHANNEL, CC, MIN, MAX, INVERT) - go back to MESSAGE_SELECT mode
                   assignEditingMode = false;
                   assignEditMode = ASSIGN_MESSAGE_SELECT;
                   selectedAddRemove = 2;  // Reset to message selection
                   Serial.println("ASSIGN pressed in EDIT mode - returning to MESSAGE_SELECT mode");
-                }
-                else {
+                } else {
                   // Default behavior for any other state
                   currentScreen = CONFIRM_ASSIGN_SAVE_SCREEN;
                   confirmAssignSave = true;
                   Serial.println("ASSIGN pressed - showing save confirmation");
                 }
-              }
-              else if (currentScreen == CONFIRM_ASSIGN_SAVE_SCREEN) {
+              } else if (currentScreen == CONFIRM_ASSIGN_SAVE_SCREEN) {
                 // On the confirm screen, ASSIGN button cancels and returns to ASSIGN_SCREEN
                 currentScreen = ASSIGN_SCREEN;
                 Serial.println("ASSIGN pressed - returning to ASSIGN_SCREEN");
-              } 
-              else if (currentScreen == ASSIGN_SETTINGS_SCREEN) {
+              } else if (currentScreen == ASSIGN_SETTINGS_SCREEN) {
                 if (editingAssignSetting) {
                   // Exit edit mode without saving changes
                   editingAssignSetting = false;
@@ -669,20 +662,17 @@ void readButtons() {
                   selectedMenuItem = 0;  // Keep Assign Settings selected
                   Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN");
                 }
-              }
-              else if (currentScreen == STATES_SCREEN) {
+              } else if (currentScreen == STATES_SCREEN) {
                 // From STATES_SCREEN, ASSIGN button goes back to MENU_SCREEN
                 currentScreen = MENU_SCREEN;
                 selectedMenuItem = 1;  // Keep States selected in menu
                 Serial.println("ASSIGN pressed - returning to MENU_SCREEN from STATES_SCREEN");
-              } 
-              else if (currentScreen == SETTINGS_SCREEN) {
+              } else if (currentScreen == SETTINGS_SCREEN) {
                 // From SETTINGS_SCREEN, ASSIGN button goes back to MENU_SCREEN
                 currentScreen = MENU_SCREEN;
                 selectedMenuItem = 2;  // Keep Settings selected in menu
                 Serial.println("ASSIGN pressed - returning to MENU_SCREEN from SETTINGS_SCREEN");
-              } 
-              else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
+              } else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
                 if (editingDisplaySetting) {
                   // Exit edit mode without saving changes - revert to original value
                   editingDisplaySetting = false;
@@ -695,44 +685,37 @@ void readButtons() {
                   selectedMenuItem = 1;  // Keep Display selected in settings menu
                   Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN from DISPLAY_SETTINGS_SCREEN");
                 }
-              } 
-              else if (currentScreen == ABOUT_SCREEN) {
+              } else if (currentScreen == ABOUT_SCREEN) {
                 // From ABOUT_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
                 currentScreen = SETTINGS_SCREEN;
                 selectedMenuItem = 2;  // Keep About selected in settings menu
                 Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN from ABOUT_SCREEN");
-              } 
-              else if (currentScreen == RESET_SCREEN) {
+              } else if (currentScreen == RESET_SCREEN) {
                 // From RESET_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
                 currentScreen = SETTINGS_SCREEN;
                 selectedMenuItem = 3;  // Keep Factory Reset selected in settings menu
                 Serial.println("ASSIGN pressed - returning to SETTINGS_SCREEN from RESET_SCREEN");
-              } 
-              else if (currentScreen == CONFIRM_RESET_SCREEN) {
+              } else if (currentScreen == CONFIRM_RESET_SCREEN) {
                 // Cancel reset and return to SETTINGS_SCREEN
                 currentScreen = SETTINGS_SCREEN;
                 selectedMenuItem = 3;  // Keep Factory Reset selected
                 Serial.println("ASSIGN pressed - Factory reset cancelled, returning to SETTINGS_SCREEN");
-              } 
-              else if (currentScreen == SAVE_STATES_SCREEN) {
+              } else if (currentScreen == SAVE_STATES_SCREEN) {
                 // From SAVE_STATES_SCREEN, ASSIGN button goes back to STATES_SCREEN
                 currentScreen = STATES_SCREEN;
                 selectedMenuItem = 0;  // Reset to first menu item
                 Serial.println("ASSIGN pressed - returning to STATES_SCREEN from SAVE_STATES_SCREEN");
-              } 
-              else if (currentScreen == LOAD_STATES_SCREEN) {
+              } else if (currentScreen == LOAD_STATES_SCREEN) {
                 // From LOAD_STATES_SCREEN, ASSIGN button goes back to STATES_SCREEN
                 currentScreen = STATES_SCREEN;
                 selectedMenuItem = 0;
                 Serial.println("ASSIGN pressed - returning to STATES_SCREEN from LOAD_STATES_SCREEN");
-              } 
-              else if (currentScreen == CLEAR_STATES_SCREEN) {
+              } else if (currentScreen == CLEAR_STATES_SCREEN) {
                 // From CLEAR_STATES_SCREEN, ASSIGN button goes back to STATES_SCREEN
                 currentScreen = STATES_SCREEN;
                 selectedMenuItem = 0;
                 Serial.println("ASSIGN pressed - returning to STATES_SCREEN from CLEAR_STATES_SCREEN");
-              } 
-              else if (currentScreen == CONFIRM_SAVE_SCREEN) {
+              } else if (currentScreen == CONFIRM_SAVE_SCREEN) {
                 // Cancel save and return to SAVE_STATES_SCREEN
                 currentScreen = SAVE_STATES_SCREEN;
                 Serial.println("ASSIGN pressed - Save cancelled, returning to SAVE_STATES_SCREEN");
@@ -935,7 +918,7 @@ void readButtons() {
                   // Save to the currently loaded state slot, or slot 0 if none loaded
                   int saveSlot = (currentStateSlot >= 0) ? currentStateSlot : 0;
                   saveStateToSlot(saveSlot);
-                  
+
                   // Update currentStateSlot if it was -1
                   if (currentStateSlot < 0) {
                     currentStateSlot = saveSlot;
@@ -992,7 +975,7 @@ void readButtons() {
               else if (currentScreen == ASSIGN_SCREEN) {
                 if (assignEditingMode) {
                   // Cycle to next parameter or exit edit mode
-                  switch(assignEditMode) {
+                  switch (assignEditMode) {
                     case ASSIGN_EDIT_CHANNEL:
                       assignEditMode = ASSIGN_EDIT_CC;
                       Serial.println("Now editing CC");
@@ -1210,7 +1193,7 @@ void readButtons() {
               else if (currentScreen == ASSIGN_SCREEN) {
                 if (assignEditingMode) {
                   // Edit mode - modify values
-                  switch(assignEditMode) {
+                  switch (assignEditMode) {
                     case ASSIGN_EDIT_CHANNEL:
                       // Handle channel with OMNI option (channel 17 = OMNI)
                       if (potMessages[selectedPot][selectedMessage].channel == 0) {
@@ -1231,13 +1214,13 @@ void readButtons() {
                       }
                       break;
                     case ASSIGN_EDIT_CC:
-                      potMessages[selectedPot][selectedMessage].cc = 
+                      potMessages[selectedPot][selectedMessage].cc =
                         (potMessages[selectedPot][selectedMessage].cc - 1 + 128) % 128;
                       Serial.print("CC set to: ");
                       Serial.println(potMessages[selectedPot][selectedMessage].cc);
                       break;
                     case ASSIGN_EDIT_INVERT:
-                      potMessages[selectedPot][selectedMessage].inverted = 
+                      potMessages[selectedPot][selectedMessage].inverted =
                         !potMessages[selectedPot][selectedMessage].inverted;
                       Serial.print("Direction set to: ");
                       Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "Inverted" : "Normal");
@@ -1245,9 +1228,8 @@ void readButtons() {
                     case ASSIGN_EDIT_MIN:
                       if (potMessages[selectedPot][selectedMessage].minValue > 0) {
                         potMessages[selectedPot][selectedMessage].minValue--;
-                        if (potMessages[selectedPot][selectedMessage].minValue > 
-                            potMessages[selectedPot][selectedMessage].maxValue) {
-                          potMessages[selectedPot][selectedMessage].maxValue = 
+                        if (potMessages[selectedPot][selectedMessage].minValue > potMessages[selectedPot][selectedMessage].maxValue) {
+                          potMessages[selectedPot][selectedMessage].maxValue =
                             potMessages[selectedPot][selectedMessage].minValue;
                         }
                       }
@@ -1257,9 +1239,8 @@ void readButtons() {
                     case ASSIGN_EDIT_MAX:
                       if (potMessages[selectedPot][selectedMessage].maxValue < 127) {
                         potMessages[selectedPot][selectedMessage].maxValue++;
-                        if (potMessages[selectedPot][selectedMessage].maxValue < 
-                            potMessages[selectedPot][selectedMessage].minValue) {
-                          potMessages[selectedPot][selectedMessage].minValue = 
+                        if (potMessages[selectedPot][selectedMessage].maxValue < potMessages[selectedPot][selectedMessage].minValue) {
+                          potMessages[selectedPot][selectedMessage].minValue =
                             potMessages[selectedPot][selectedMessage].maxValue;
                         }
                       }
@@ -1441,7 +1422,7 @@ void readButtons() {
               else if (currentScreen == ASSIGN_SCREEN) {
                 if (assignEditingMode) {
                   // Edit mode - modify values
-                  switch(assignEditMode) {
+                  switch (assignEditMode) {
                     case ASSIGN_EDIT_CHANNEL:
                       // Handle channel with OMNI option (channel 17 = OMNI)
                       if (potMessages[selectedPot][selectedMessage].channel == 15) {
@@ -1462,13 +1443,13 @@ void readButtons() {
                       }
                       break;
                     case ASSIGN_EDIT_CC:
-                      potMessages[selectedPot][selectedMessage].cc = 
+                      potMessages[selectedPot][selectedMessage].cc =
                         (potMessages[selectedPot][selectedMessage].cc + 1) % 128;
                       Serial.print("CC set to: ");
                       Serial.println(potMessages[selectedPot][selectedMessage].cc);
                       break;
                     case ASSIGN_EDIT_INVERT:
-                      potMessages[selectedPot][selectedMessage].inverted = 
+                      potMessages[selectedPot][selectedMessage].inverted =
                         !potMessages[selectedPot][selectedMessage].inverted;
                       Serial.print("Direction set to: ");
                       Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "Inverted" : "Normal");
@@ -1476,9 +1457,8 @@ void readButtons() {
                     case ASSIGN_EDIT_MIN:
                       if (potMessages[selectedPot][selectedMessage].minValue < 127) {
                         potMessages[selectedPot][selectedMessage].minValue++;
-                        if (potMessages[selectedPot][selectedMessage].minValue > 
-                            potMessages[selectedPot][selectedMessage].maxValue) {
-                          potMessages[selectedPot][selectedMessage].maxValue = 
+                        if (potMessages[selectedPot][selectedMessage].minValue > potMessages[selectedPot][selectedMessage].maxValue) {
+                          potMessages[selectedPot][selectedMessage].maxValue =
                             potMessages[selectedPot][selectedMessage].minValue;
                         }
                       }
@@ -1488,9 +1468,8 @@ void readButtons() {
                     case ASSIGN_EDIT_MAX:
                       if (potMessages[selectedPot][selectedMessage].maxValue > 0) {
                         potMessages[selectedPot][selectedMessage].maxValue--;
-                        if (potMessages[selectedPot][selectedMessage].maxValue < 
-                            potMessages[selectedPot][selectedMessage].minValue) {
-                          potMessages[selectedPot][selectedMessage].minValue = 
+                        if (potMessages[selectedPot][selectedMessage].maxValue < potMessages[selectedPot][selectedMessage].minValue) {
+                          potMessages[selectedPot][selectedMessage].minValue =
                             potMessages[selectedPot][selectedMessage].maxValue;
                         }
                       }
@@ -1735,7 +1714,7 @@ void addMidiControl() {
     potMessages[selectedPot][messageCount[selectedPot]].inverted = false;
     potMessages[selectedPot][messageCount[selectedPot]].minValue = 0;
     potMessages[selectedPot][messageCount[selectedPot]].maxValue = 127;
-    potMessages[selectedPot][messageCount[selectedPot]].value = currentMidiValue[selectedPot];
+    potMessages[selectedPot][messageCount[selectedPot]].value = potState[selectedPot];
     messageCount[selectedPot]++;
     scrollOffset = max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES);
 
