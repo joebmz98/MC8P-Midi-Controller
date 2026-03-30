@@ -2711,7 +2711,7 @@ void drawSettingsMenuScreen() {
   display.setCursor(5, 25);
   display.println("- Assign Settings");
   display.setCursor(5, 35);
-  display.println("- Display");
+  display.println("- Display Settings");
   display.setCursor(5, 45);
   display.println("- About");
   display.setCursor(5, 55);
@@ -2745,12 +2745,12 @@ void drawAssignSettingsScreen() {
   display.print("Assign Settings");
 
   // Display the current edit pot selection
-  display.setCursor(5, 30);
-  display.print("Edit Pot:");
+  display.setCursor(5, 25);
+  display.print("- Edit Pot:");
 
   // Display the pot number with selection box
   int potX = 65;
-  int potY = 28;
+  int potY = 25;
 
   display.setCursor(potX, potY);
   display.print("Pot ");
@@ -3080,7 +3080,7 @@ void saveGlobalSettingsToEEPROM() {
   settings.version = GLOBAL_SETTINGS_VERSION;
   settings.displayInverted = displayInverted;
   settings.lastLoadedState = currentStateSlot;
-  settings.editPot = editPotSelection;  // NEW
+  settings.editPot = editPotSelection;  // Save the edit pot setting
 
   EEPROM.put(GLOBAL_EEPROM_ADDR, settings);
 
@@ -3103,7 +3103,7 @@ void loadGlobalSettingsFromEEPROM() {
   if (settings.signature == EEPROM_SIGNATURE && settings.version == GLOBAL_SETTINGS_VERSION) {
     displayInverted = settings.displayInverted;
     currentStateSlot = settings.lastLoadedState;
-    editPotSelection = settings.editPot;  // NEW
+    editPotSelection = settings.editPot;  // Load the edit pot setting
 
     // Validate editPotSelection range
     if (editPotSelection < 0 || editPotSelection >= N_POTS) {
@@ -3190,7 +3190,7 @@ void saveStateToSlot(int slot) {
 
   int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
   EEPROM.put(slotAddress, currentState);
-  saveGlobalSettingsToEEPROM();
+  saveGlobalSettingsToEEPROM();  // This already saves editPot and displayInverted
 
   Serial.print("State saved to slot ");
   Serial.println(slot + 1);
