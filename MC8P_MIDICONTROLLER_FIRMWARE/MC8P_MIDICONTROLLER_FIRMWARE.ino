@@ -1150,6 +1150,8 @@ void readButtons() {
               // *********************** //
               else if (currentScreen == ASSIGN_SETTINGS_SCREEN && editingAssignSetting) {
                 editPotSelection = (editPotSelection - 1 + N_POTS) % N_POTS;
+                // Save immediately when changing
+                saveGlobalSettingsToEEPROM();
                 Serial.print("Edit Pot set to: Pot ");
                 Serial.println(editPotSelection + 1);
               }
@@ -1170,6 +1172,9 @@ void readButtons() {
                   // Toggle the actual boolean that moves the box
                   bool oldValue = displayInverted;
                   displayInverted = !displayInverted;
+                  
+                  // Save immediately when toggling
+                  saveGlobalSettingsToEEPROM();
 
                   Serial.print("PREV toggled displayInverted from ");
                   Serial.print(oldValue ? "YES" : "NO");
@@ -1407,6 +1412,8 @@ void readButtons() {
               // *********************** //
               else if (currentScreen == ASSIGN_SETTINGS_SCREEN && editingAssignSetting) {
                 editPotSelection = (editPotSelection + 1) % N_POTS;
+                // Save immediately when changing
+                saveGlobalSettingsToEEPROM();
                 Serial.print("Edit Pot set to: Pot ");
                 Serial.println(editPotSelection + 1);
               }
@@ -1421,6 +1428,9 @@ void readButtons() {
 
                   // Toggle the actual boolean that moves the box
                   displayInverted = !displayInverted;
+                  
+                  // Save immediately when toggling
+                  saveGlobalSettingsToEEPROM();
 
                   Serial.print("NEXT toggled displayInverted to: ");
                   Serial.println(displayInverted ? "YES" : "NO");
@@ -1765,10 +1775,10 @@ void deactivateTempOverride() {
         // Check for OMNI channel
         if (potMessages[i][j].channel == 16) {  // OMNI
           for (byte ch = 0; ch < 16; ch++) {
-            MIDI.sendControlChange(potMessages[i][j].cc, potMessages[i][j].value, ch + 1);
+            sendControlChange(potMessages[i][j].cc, potMessages[i][j].value, ch + 1);
           }
         } else {
-          MIDI.sendControlChange(potMessages[i][j].cc, potMessages[i][j].value, potMessages[i][j].channel + 1);
+          sendControlChange(potMessages[i][j].cc, potMessages[i][j].value, potMessages[i][j].channel + 1);
         }
       }
 
@@ -1826,6 +1836,17 @@ void resetCatchUp(int potIndex) {
 // *********************** //
 // MIDI FUNCTIONS
 // *********************** //
+// *********************** //
+// MIDI HANDLING           //
+// *********************** //
+void sendControlChange(byte cc, byte value, byte channel) {
+  // Send to DIN MIDI (Serial1)
+  MIDI.sendControlChange(cc, value, channel);
+  
+  // Send to USB MIDI
+  usbMIDI.sendControlChange(cc, value, channel);
+}
+
 // *********************** //
 // ADD MIDI CONTROL FNC
 // *********************** //
@@ -1892,6 +1913,615 @@ void removeMidiControl() {
   }
 }
 
+// *********************** //
+// EEPROM FUNCTIONS
+// *********************** //
+// *********************** //
+// FACTORY RESET FUNCTION
+// *********************** //
+void factoryReset() {
+  Serial.println("=== FACTORY RESET INITIATED ===");
+
+  // Reset all pots to default configuration
+  for (int i = 0; i < N_POTS; i++) {
+    messageCount[i] = 1;                            // 1 message per pot
+    potMessages[i][0].channel = i;                  // Channel 1-8 (0-7 in code)
+    potMessages[i][0].cc = 7;                       // CC 7
+    potMessages[i][0].inverted = false;             // Normal direction
+    potMessages[i][0].minValue = 0;                 // Min value 0
+    potMessages[i][0].maxValue = 127;               // Max value 127
+    potMessages[i][0].value = currentMidiValue[i];  // Current pot position
+
+    // Clear any additional messages
+    for (int j = 1; j < MAX_MESSAGES_PER_POT; j++) {
+      potMessages[i][j].channel = 0;
+      potMessages[i][j].cc = 0;
+      potMessages[i][j].inverted = false;
+      potMessages[i][j].minValue = 0;
+      potMessages[i][j].maxValue = 127;
+      potMessages[i][j].value = 0;
+    }
+  }
+
+  // Reset display settings
+  displayInverted = false;
+
+  // Reset current state slot
+  currentStateSlot = -1;
+
+  // Reset edit pot selection
+  editPotSelection = 7;  // Default to pot 8
+
+  // Save factory reset settings to EEPROM
+  saveGlobalSettingsToEEPROM();  // This saves displayInverted and editPotSelection
+  saveStateToSlot(0);            // Save to slot 0 (this will NOT call saveGlobalSettingsToEEPROM now)
+
+  // Clear all other state slots
+  for (int slot = 1; slot < NUM_STATE_SLOTS; slot++) {
+    clearStateFromSlot(slot);
+  }
+
+  // Reset navigation states
+  selectedPot = 0;
+  selectedMessage = 0;
+  scrollOffset = 0;
+  assignEditMode = ASSIGN_POT_SELECT;
+  assignEditingMode = false;
+
+  Serial.println("Factory reset completed!");
+  Serial.println("All pots reset to: Channel 1-8, CC7, Range 0-127, Normal direction");
+  Serial.println("=== FACTORY RESET COMPLETE ===");
+
+  // Visual feedback
+  for (int i = 0; i < 3; i++) {
+    display.invertDisplay(true);
+    delay(100);
+    display.invertDisplay(false);
+    delay(100);
+  }
+}
+
+// *********************** //
+// SAVE GLOBAL SETTINGS TO EEPROM
+// *********************** //
+void saveGlobalSettingsToEEPROM() {
+  GlobalSettings settings;
+  settings.signature = EEPROM_SIGNATURE;
+  settings.version = GLOBAL_SETTINGS_VERSION;
+  settings.displayInverted = displayInverted;
+  settings.lastLoadedState = currentStateSlot;
+  settings.editPot = editPotSelection;  // Save the edit pot setting
+
+  EEPROM.put(GLOBAL_EEPROM_ADDR, settings);
+
+  Serial.println("Global settings saved to EEPROM");
+  Serial.print("Display invert saved as: ");
+  Serial.println(displayInverted ? "YES" : "NO");
+  Serial.print("Last loaded state saved as: ");
+  Serial.println(currentStateSlot);
+  Serial.print("Edit pot saved as: Pot ");
+  Serial.println(editPotSelection + 1);
+}
+
+// *********************** //
+// LOAD GLOBAL SETTINGS FROM EEPROM
+// *********************** //
+void loadGlobalSettingsFromEEPROM() {
+  GlobalSettings settings;
+  EEPROM.get(GLOBAL_EEPROM_ADDR, settings);
+
+  if (settings.signature == EEPROM_SIGNATURE && settings.version == GLOBAL_SETTINGS_VERSION) {
+    displayInverted = settings.displayInverted;
+    currentStateSlot = settings.lastLoadedState;
+    editPotSelection = settings.editPot;  // Load the edit pot setting
+
+    // Validate editPotSelection range
+    if (editPotSelection < 0 || editPotSelection >= N_POTS) {
+      editPotSelection = 7;  // Default to pot 8 if invalid
+    }
+
+    // Apply display setting
+    if (displayInverted) {
+      display.invertDisplay(true);
+    } else {
+      display.invertDisplay(false);
+    }
+
+    Serial.println("Global settings loaded from EEPROM");
+    Serial.print("Display invert loaded as: ");
+    Serial.println(displayInverted ? "YES" : "NO");
+    Serial.print("Last loaded state loaded as: ");
+    Serial.println(currentStateSlot);
+    Serial.print("Edit pot loaded as: Pot ");
+    Serial.println(editPotSelection + 1);
+  } else {
+    Serial.println("No valid global settings found, using defaults");
+    displayInverted = false;
+    currentStateSlot = -1;
+    editPotSelection = 7;  // Default to pot 8
+  }
+}
+
+// *********************** //
+// SAVE SETTINGS TO EEPROM (for current state)
+// *********************** //
+void saveSettingsToEEPROM() {
+  // Only save to the currently loaded state slot
+  if (currentStateSlot >= 0 && currentStateSlot < NUM_STATE_SLOTS) {
+    saveStateToSlot(currentStateSlot);
+    Serial.print("Settings saved to current state slot ");
+    Serial.println(currentStateSlot + 1);
+  } else {
+    // If no state is loaded, save to slot 0
+    Serial.println("No state loaded, saving to slot 0");
+    saveStateToSlot(0);
+    currentStateSlot = 0;
+    saveGlobalSettingsToEEPROM();
+  }
+}
+
+// *********************** //
+// LOAD SETTINGS FROM EEPROM (load MIDI config)
+// *********************** //
+void loadSettingsFromEEPROM() {
+  // Don't load global settings again - they're already loaded in initController
+  // Just try to load the last used state if one was saved
+  if (currentStateSlot >= 0 && currentStateSlot < NUM_STATE_SLOTS) {
+    loadStateFromSlot(currentStateSlot);
+  } else {
+    // Load default state (slot 0) if no last loaded state
+    loadStateFromSlot(0);
+  }
+}
+
+// *********************** //
+// SAVE STATE TO SLOT
+// *********************** //
+void saveStateToSlot(int slot) {
+  if (slot < 0 || slot >= NUM_STATE_SLOTS) return;
+
+  SavedSettings currentState;
+  currentState.signature = EEPROM_SIGNATURE;
+  currentState.version = SETTINGS_VERSION;
+
+  for (int i = 0; i < N_POTS; i++) {
+    currentState.messageCount[i] = messageCount[i];
+    for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
+      currentState.potMessages[i][j].channel = potMessages[i][j].channel;
+      currentState.potMessages[i][j].cc = potMessages[i][j].cc;
+      currentState.potMessages[i][j].inverted = potMessages[i][j].inverted;
+      currentState.potMessages[i][j].minValue = potMessages[i][j].minValue;
+      currentState.potMessages[i][j].maxValue = potMessages[i][j].maxValue;
+      currentState.potMessages[i][j].value = potMessages[i][j].value;
+    }
+  }
+
+  int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
+  EEPROM.put(slotAddress, currentState);
+
+  Serial.print("State saved to slot ");
+  Serial.println(slot + 1);
+}
+
+// *********************** //
+// LOAD STATE FROM SLOT
+// *********************** //
+void loadStateFromSlot(int slot) {
+  if (slot < 0 || slot >= NUM_STATE_SLOTS) return;
+
+  int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
+  SavedSettings loadedState;
+  EEPROM.get(slotAddress, loadedState);
+
+  if (loadedState.signature == EEPROM_SIGNATURE) {
+    for (int i = 0; i < N_POTS; i++) {
+      messageCount[i] = loadedState.messageCount[i];
+      for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
+        potMessages[i][j].channel = loadedState.potMessages[i][j].channel;
+        potMessages[i][j].cc = loadedState.potMessages[i][j].cc;
+        potMessages[i][j].inverted = loadedState.potMessages[i][j].inverted;
+        potMessages[i][j].minValue = loadedState.potMessages[i][j].minValue;
+        potMessages[i][j].maxValue = loadedState.potMessages[i][j].maxValue;
+        potMessages[i][j].value = loadedState.potMessages[i][j].value;
+      }
+    }
+
+    currentStateSlot = slot;
+
+    Serial.print("State loaded from slot ");
+    Serial.println(slot + 1);
+  } else {
+    Serial.print("No valid state found in slot ");
+    Serial.println(slot + 1);
+  }
+}
+
+// *********************** //
+// CLEAR STATE FROM SLOT
+// *********************** //
+void clearStateFromSlot(int slot) {
+  if (slot < 0 || slot >= NUM_STATE_SLOTS) return;
+
+  // Calculate EEPROM address for this slot
+  int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
+
+  // Create empty state with invalid signature
+  SavedSettings emptyState;
+  emptyState.signature = 0;  // Invalid signature
+  emptyState.version = SETTINGS_VERSION;
+
+  // Set default MIDI values
+  for (int i = 0; i < N_POTS; i++) {
+    emptyState.messageCount[i] = 1;  // Default to 1 message
+    for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
+      emptyState.potMessages[i][j].channel = 0;
+      emptyState.potMessages[i][j].cc = 0;
+      emptyState.potMessages[i][j].value = 0;
+    }
+  }
+
+  // Write to EEPROM
+  EEPROM.put(slotAddress, emptyState);
+
+  // If we cleared the currently loaded state, reset currentStateSlot and save global settings
+  if (currentStateSlot == slot) {
+    currentStateSlot = -1;
+    saveGlobalSettingsToEEPROM();  // Only save global settings when the current state slot changes
+  }
+
+  Serial.print("State cleared from slot ");
+  Serial.println(slot + 1);
+}
+
+// *********************** //
+// INITIALISE
+// *********************** //
+void initController() {
+
+  // INIT BUTTONS
+  for (int i = 0; i < NUM_BUTTONS; i++) {
+    pinMode(BUTTON_PINS[i], INPUT_PULLDOWN);
+  }
+
+  // INIT OLED
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;)
+      ;
+  }
+
+  // FIRST: Initialize display with default settings
+  display.clearDisplay();
+  display.fillRect(0, 0, 128, 64, 1);          // WHITE BACKGROUND
+  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // OUTER BOX
+  display.drawRoundRect(17, 38, 94, 8, 3, 0);  // LOADING BAR BORDER
+  display.fillRoundRect(19, 40, 4, 4, 1, 0);   // LOADING BAR INNER
+
+  // TEXT
+  display.setTextColor(0);
+  display.setTextSize(3);
+  display.setTextWrap(false);
+  display.setFont(&Picopixel);
+  display.setCursor(29, 26);
+  display.print("M C 8 P");
+  display.setTextSize(1);
+  display.setCursor(58, 55);
+  display.print("v");
+  display.print(FIRMWARE_VERSION);
+  display.display();
+
+  // INIT POTS
+  for (int i = 0; i < N_POTS; i++) {
+    responsivePot[i].setAnalogResolution(1023);
+  }
+
+  // INITIALIZE TEMP OVERRIDE VALUES TO 0
+  for (int i = 0; i < N_POTS; i++) {
+    originalMidiValues[i] = 0;
+    tempMidiValues[i] = 0;
+    postOverridePotPositions[i] = 0;
+    catchUpStartValue[i] = 0;
+    catchUpStartPotPos[i] = 0;
+    catchUpActive[i] = false;
+  }
+
+  // LOADING BAR UPDATE
+  display.fillRoundRect(19, 40, 30, 4, 1, 0);
+  display.display();
+  delay(250);
+
+  // SECOND: Load global settings (display inversion and edit pot)
+  Serial.println("=== BOOTUP DEBUG ===");
+  Serial.println("Loading global settings...");
+  loadGlobalSettingsFromEEPROM();
+
+  // THIRD: Load MIDI settings from EEPROM
+  Serial.println("Loading MIDI settings...");
+  loadSettingsFromEEPROM();
+
+  // DEBUG: Print loaded MIDI values for each pot
+  Serial.println("=== LOADED MIDI VALUES ===");
+  for (int i = 0; i < N_POTS; i++) {
+    Serial.print("Pot ");
+    Serial.print(i);
+    Serial.print(" (Pin A");
+    Serial.print(POT_PIN[i] - A0);
+    Serial.print("): ");
+    Serial.print("messageCount=");
+    Serial.print(messageCount[i]);
+    if (messageCount[i] > 0) {
+      Serial.print(", channel=");
+      if (potMessages[i][0].channel == 16) {
+        Serial.print("OMNI");
+      } else {
+        Serial.print(potMessages[i][0].channel + 1);
+      }
+      Serial.print(", cc=");
+      Serial.print(potMessages[i][0].cc);
+      Serial.print(", inverted=");
+      Serial.print(potMessages[i][0].inverted ? "YES" : "NO");
+      Serial.print(", min=");
+      Serial.print(potMessages[i][0].minValue);
+      Serial.print(", max=");
+      Serial.print(potMessages[i][0].maxValue);
+      Serial.print(", value=");
+      Serial.println(potMessages[i][0].value);
+    } else {
+      Serial.println(" (no messages)");
+    }
+  }
+  Serial.println("=== END DEBUG ===");
+
+  // LOADING BAR UPDATE
+  display.fillRoundRect(19, 40, 60, 4, 1, 0);
+  display.display();
+  delay(250);
+
+  // INIT MIDI MESSAGES - WILL USE DEFAULT IF NONE ARE SAVED
+  bool settingsLoaded = false;
+  for (int i = 0; i < N_POTS; i++) {
+    if (messageCount[i] > 0) {
+      settingsLoaded = true;
+      break;
+    }
+  }
+
+  if (!settingsLoaded) {
+    Serial.println("No valid settings loaded, using defaults");
+    for (int i = 0; i < N_POTS; i++) {
+      messageCount[i] = 1;
+      potMessages[i][0].channel = potChannels[i];
+      potMessages[i][0].cc = potCCs[i];
+      potMessages[i][0].inverted = false;
+      potMessages[i][0].minValue = 0;
+      potMessages[i][0].maxValue = 127;
+      potMessages[i][0].value = 0;
+
+      Serial.print("Default for Pot ");
+      Serial.print(i);
+      Serial.print(": channel=");
+      Serial.print(potMessages[i][0].channel);
+      Serial.print(", cc=");
+      Serial.print(potMessages[i][0].cc);
+      Serial.println();
+    }
+  }
+
+  // Read initial pot positions and update MIDI values
+  Serial.println("=== READING INITIAL POT POSITIONS ===");
+  for (int i = 0; i < N_POTS; i++) {
+    potReading[i] = analogRead(POT_PIN[i]);
+    responsivePot[i].update(potReading[i]);
+    potState[i] = responsivePot[i].getValue();
+    currentMidiValue[i] = map(potState[i], 0, 1023, 0, 127);
+
+    Serial.print("Pot ");
+    Serial.print(i);
+    Serial.print(": raw=");
+    Serial.print(potReading[i]);
+    Serial.print(", filtered=");
+    Serial.print(potState[i]);
+    Serial.print(", MIDI=");
+    Serial.print(currentMidiValue[i]);
+
+    if (messageCount[i] > 0) {
+      int finalValue = mapMidiValueWithParams(currentMidiValue[i],
+                                              potMessages[i][0].minValue,
+                                              potMessages[i][0].maxValue,
+                                              potMessages[i][0].inverted);
+      potMessages[i][0].value = finalValue;
+      Serial.print(" (stored value set to ");
+      Serial.print(finalValue);
+      Serial.print(")");
+    }
+    Serial.println();
+  }
+  Serial.println("=== END POT READING ===");
+
+  // LOADING BAR UPDATE
+  display.fillRoundRect(19, 40, 90, 4, 1, 0);
+  display.display();
+  delay(1000);
+
+  // Send initial MIDI values
+  Serial.println("=== SENDING INITIAL MIDI VALUES ===");
+  for (int i = 0; i < N_POTS; i++) {
+    for (int j = 0; j < messageCount[i]; j++) {
+      int finalValue = mapMidiValueWithParams(potMessages[i][j].value,
+                                              potMessages[i][j].minValue,
+                                              potMessages[i][j].maxValue,
+                                              potMessages[i][j].inverted);
+
+      if (potMessages[i][j].channel == 16) {  // OMNI
+        for (byte ch = 0; ch < 16; ch++) {
+          sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
+        }
+        Serial.print("Sent MIDI: Pot ");
+        Serial.print(i);
+        Serial.print(", Message ");
+        Serial.print(j);
+        Serial.print(": Ch=OMNI, CC=");
+        Serial.print(potMessages[i][j].cc);
+        Serial.print(", Final Value=");
+        Serial.print(finalValue);
+        Serial.print(", Range=[");
+        Serial.print(potMessages[i][j].minValue);
+        Serial.print("-");
+        Serial.print(potMessages[i][j].maxValue);
+        Serial.print("], Dir=");
+        Serial.println(potMessages[i][j].inverted ? "INV" : "NOR");
+      } else {
+        sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
+        Serial.print("Sent MIDI: Pot ");
+        Serial.print(i);
+        Serial.print(", Message ");
+        Serial.print(j);
+        Serial.print(": Ch=");
+        Serial.print(potMessages[i][j].channel + 1);
+        Serial.print(", CC=");
+        Serial.print(potMessages[i][j].cc);
+        Serial.print(", Final Value=");
+        Serial.print(finalValue);
+        Serial.print(", Range=[");
+        Serial.print(potMessages[i][j].minValue);
+        Serial.print("-");
+        Serial.print(potMessages[i][j].maxValue);
+        Serial.print("], Dir=");
+        Serial.println(potMessages[i][j].inverted ? "INV" : "NOR");
+      }
+    }
+  }
+
+  // Final loading bar completion
+  display.fillRoundRect(19, 40, 94, 4, 1, 0);
+  display.display();
+  delay(500);
+
+  // Apply display inversion setting (already loaded from EEPROM)
+  if (displayInverted) {
+    display.invertDisplay(true);
+    Serial.println("Display inversion ENABLED");
+  } else {
+    display.invertDisplay(false);
+    Serial.println("Display inversion DISABLED");
+  }
+
+  Serial.println("=== BOOTUP COMPLETE ===");
+}
+
+// *********************** //
+// HANDLE POT PARAMETER EDIT
+// *********************** //
+void handleParameterEditWithPot() {
+  // Only process when in assign screen and editing mode
+  if (currentScreen != ASSIGN_SCREEN || !assignEditingMode) {
+    return;
+  }
+
+  // Read the selected edit potentiometer
+  int pot8Raw = analogRead(POT_PIN[editPotSelection]);
+
+  // Update responsive analog reading for smoother values
+  responsivePot[editPotSelection].update(pot8Raw);
+  int potValue = responsivePot[editPotSelection].getValue();
+
+  // Debounce: only process if value has changed significantly
+  if (abs(potValue - lastPot8Value) > 5) {
+    lastPot8Value = potValue;
+    lastPot8ChangeTime = millis();
+
+    // Map to appropriate range based on what we're editing
+    bool valueChanged = false;
+
+    switch (assignEditMode) {
+      case ASSIGN_EDIT_CHANNEL:
+        {
+          // Map 0-1023 to 0-16 (channels 1-16 + OMNI)
+          int newChannel = map(potValue, 0, 1023, 0, 16);
+          if (newChannel != potMessages[selectedPot][selectedMessage].channel) {
+            potMessages[selectedPot][selectedMessage].channel = newChannel;
+            valueChanged = true;
+            Serial.print("Channel set to: ");
+            if (potMessages[selectedPot][selectedMessage].channel == 16) {
+              Serial.println("OMNI");
+            } else {
+              Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
+            }
+          }
+          break;
+        }
+
+      case ASSIGN_EDIT_CC:
+        {
+          // Map 0-1023 to 0-127
+          int newCC = map(potValue, 0, 1023, 0, 127);
+          if (newCC != potMessages[selectedPot][selectedMessage].cc) {
+            potMessages[selectedPot][selectedMessage].cc = newCC;
+            valueChanged = true;
+            Serial.print("CC set to: ");
+            Serial.println(potMessages[selectedPot][selectedMessage].cc);
+          }
+          break;
+        }
+
+      case ASSIGN_EDIT_MIN:
+        {
+          // Map 0-1023 to 0-127
+          int newMin = map(potValue, 0, 1023, 0, 127);
+          if (newMin != potMessages[selectedPot][selectedMessage].minValue) {
+            potMessages[selectedPot][selectedMessage].minValue = newMin;
+            // Ensure max value is at least min value
+            if (potMessages[selectedPot][selectedMessage].maxValue < newMin) {
+              potMessages[selectedPot][selectedMessage].maxValue = newMin;
+            }
+            valueChanged = true;
+            Serial.print("Min value set to: ");
+            Serial.println(potMessages[selectedPot][selectedMessage].minValue);
+          }
+          break;
+        }
+
+      case ASSIGN_EDIT_MAX:
+        {
+          // Map 0-1023 to 0-127
+          int newMax = map(potValue, 0, 1023, 0, 127);
+          if (newMax != potMessages[selectedPot][selectedMessage].maxValue) {
+            potMessages[selectedPot][selectedMessage].maxValue = newMax;
+            // Ensure min value is at most max value
+            if (potMessages[selectedPot][selectedMessage].minValue > newMax) {
+              potMessages[selectedPot][selectedMessage].minValue = newMax;
+            }
+            valueChanged = true;
+            Serial.print("Max value set to: ");
+            Serial.println(potMessages[selectedPot][selectedMessage].maxValue);
+          }
+          break;
+        }
+
+      case ASSIGN_EDIT_INVERT:
+        {
+          // Use potentiometer to toggle between NOR and INV
+          // Map to 0-1, with threshold at 512 (midpoint)
+          bool newInvert = (potValue > 512);
+          if (newInvert != potMessages[selectedPot][selectedMessage].inverted) {
+            potMessages[selectedPot][selectedMessage].inverted = newInvert;
+            valueChanged = true;
+            Serial.print("Direction set to: ");
+            Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR");
+          }
+          break;
+        }
+
+      default:
+        break;
+    }
+
+    // Force screen redraw if value changed
+    if (valueChanged) {
+      drawAssignScreen();
+    }
+  }
+}
 
 // *********************** //
 // DISPLAY FUNCTIONS
@@ -3143,625 +3773,4 @@ void drawConfirmResetPopup() {
   }
 
   display.display();
-}
-// *********************** //
-// EEPROM FUNCTIONS
-// *********************** //
-
-// *********************** //
-// FACTORY RESET FUNCTION
-// *********************** //
-void factoryReset() {
-  Serial.println("=== FACTORY RESET INITIATED ===");
-
-  // Reset all pots to default configuration
-  for (int i = 0; i < N_POTS; i++) {
-    messageCount[i] = 1;                            // 1 message per pot
-    potMessages[i][0].channel = i;                  // Channel 1-8 (0-7 in code)
-    potMessages[i][0].cc = 7;                       // CC 7
-    potMessages[i][0].inverted = false;             // Normal direction
-    potMessages[i][0].minValue = 0;                 // Min value 0
-    potMessages[i][0].maxValue = 127;               // Max value 127
-    potMessages[i][0].value = currentMidiValue[i];  // Current pot position
-
-    // Clear any additional messages
-    for (int j = 1; j < MAX_MESSAGES_PER_POT; j++) {
-      potMessages[i][j].channel = 0;
-      potMessages[i][j].cc = 0;
-      potMessages[i][j].inverted = false;
-      potMessages[i][j].minValue = 0;
-      potMessages[i][j].maxValue = 127;
-      potMessages[i][j].value = 0;
-    }
-  }
-
-  // Reset display settings
-  displayInverted = false;
-
-  // Reset current state slot
-  currentStateSlot = -1;
-
-  // Reset edit pot selection
-  editPotSelection = 7;  // Default to pot 8
-
-  // Save factory reset settings to EEPROM
-  saveGlobalSettingsToEEPROM();  // This saves displayInverted and editPotSelection
-  saveStateToSlot(0);            // Save to slot 0 (this will NOT call saveGlobalSettingsToEEPROM now)
-
-  // Clear all other state slots
-  for (int slot = 1; slot < NUM_STATE_SLOTS; slot++) {
-    clearStateFromSlot(slot);
-  }
-
-  // Reset navigation states
-  selectedPot = 0;
-  selectedMessage = 0;
-  scrollOffset = 0;
-  assignEditMode = ASSIGN_POT_SELECT;
-  assignEditingMode = false;
-
-  Serial.println("Factory reset completed!");
-  Serial.println("All pots reset to: Channel 1-8, CC7, Range 0-127, Normal direction");
-  Serial.println("=== FACTORY RESET COMPLETE ===");
-
-  // Visual feedback
-  for (int i = 0; i < 3; i++) {
-    display.invertDisplay(true);
-    delay(100);
-    display.invertDisplay(false);
-    delay(100);
-  }
-}
-
-// *********************** //
-// SAVE GLOBAL SETTINGS TO EEPROM
-// *********************** //
-void saveGlobalSettingsToEEPROM() {
-  GlobalSettings settings;
-  settings.signature = EEPROM_SIGNATURE;
-  settings.version = GLOBAL_SETTINGS_VERSION;
-  settings.displayInverted = displayInverted;
-  settings.lastLoadedState = currentStateSlot;
-  settings.editPot = editPotSelection;  // Save the edit pot setting
-
-  EEPROM.put(GLOBAL_EEPROM_ADDR, settings);
-
-  Serial.println("Global settings saved to EEPROM");
-  Serial.print("Display invert saved as: ");
-  Serial.println(displayInverted ? "YES" : "NO");
-  Serial.print("Last loaded state saved as: ");
-  Serial.println(currentStateSlot);
-  Serial.print("Edit pot saved as: Pot ");
-  Serial.println(editPotSelection + 1);
-}
-
-// *********************** //
-// LOAD GLOBAL SETTINGS FROM EEPROM
-// *********************** //
-void loadGlobalSettingsFromEEPROM() {
-  GlobalSettings settings;
-  EEPROM.get(GLOBAL_EEPROM_ADDR, settings);
-
-  if (settings.signature == EEPROM_SIGNATURE && settings.version == GLOBAL_SETTINGS_VERSION) {
-    displayInverted = settings.displayInverted;
-    currentStateSlot = settings.lastLoadedState;
-    editPotSelection = settings.editPot;  // Load the edit pot setting
-
-    // Validate editPotSelection range
-    if (editPotSelection < 0 || editPotSelection >= N_POTS) {
-      editPotSelection = 7;  // Default to pot 8 if invalid
-    }
-
-    // Apply display setting
-    if (displayInverted) {
-      display.invertDisplay(true);
-    } else {
-      display.invertDisplay(false);
-    }
-
-    Serial.println("Global settings loaded from EEPROM");
-    Serial.print("Display invert loaded as: ");
-    Serial.println(displayInverted ? "YES" : "NO");
-    Serial.print("Last loaded state loaded as: ");
-    Serial.println(currentStateSlot);
-    Serial.print("Edit pot loaded as: Pot ");
-    Serial.println(editPotSelection + 1);
-  } else {
-    Serial.println("No valid global settings found, using defaults");
-    displayInverted = false;
-    currentStateSlot = -1;
-    editPotSelection = 7;  // Default to pot 8
-  }
-}
-
-// *********************** //
-// SAVE SETTINGS TO EEPROM (for current state)
-// *********************** //
-void saveSettingsToEEPROM() {
-  // Only save to the currently loaded state slot
-  if (currentStateSlot >= 0 && currentStateSlot < NUM_STATE_SLOTS) {
-    saveStateToSlot(currentStateSlot);
-    Serial.print("Settings saved to current state slot ");
-    Serial.println(currentStateSlot + 1);
-  } else {
-    // If no state is loaded, save to slot 0
-    Serial.println("No state loaded, saving to slot 0");
-    saveStateToSlot(0);
-    currentStateSlot = 0;
-    saveGlobalSettingsToEEPROM();
-  }
-}
-
-// *********************** //
-// LOAD SETTINGS FROM EEPROM (load MIDI config)
-// *********************** //
-void loadSettingsFromEEPROM() {
-  // Don't load global settings again - they're already loaded in initController
-  // Just try to load the last used state if one was saved
-  if (currentStateSlot >= 0 && currentStateSlot < NUM_STATE_SLOTS) {
-    loadStateFromSlot(currentStateSlot);
-  } else {
-    // Load default state (slot 0) if no last loaded state
-    loadStateFromSlot(0);
-  }
-}
-
-// *********************** //
-// SAVE STATE TO SLOT
-// *********************** //
-void saveStateToSlot(int slot) {
-  if (slot < 0 || slot >= NUM_STATE_SLOTS) return;
-
-  SavedSettings currentState;
-  currentState.signature = EEPROM_SIGNATURE;
-  currentState.version = SETTINGS_VERSION;
-
-  for (int i = 0; i < N_POTS; i++) {
-    currentState.messageCount[i] = messageCount[i];
-    for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
-      currentState.potMessages[i][j].channel = potMessages[i][j].channel;
-      currentState.potMessages[i][j].cc = potMessages[i][j].cc;
-      currentState.potMessages[i][j].inverted = potMessages[i][j].inverted;
-      currentState.potMessages[i][j].minValue = potMessages[i][j].minValue;
-      currentState.potMessages[i][j].maxValue = potMessages[i][j].maxValue;
-      currentState.potMessages[i][j].value = potMessages[i][j].value;
-    }
-  }
-
-  int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
-  EEPROM.put(slotAddress, currentState);
-
-  Serial.print("State saved to slot ");
-  Serial.println(slot + 1);
-}
-
-// *********************** //
-// LOAD STATE FROM SLOT
-// *********************** //
-void loadStateFromSlot(int slot) {
-  if (slot < 0 || slot >= NUM_STATE_SLOTS) return;
-
-  int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
-  SavedSettings loadedState;
-  EEPROM.get(slotAddress, loadedState);
-
-  if (loadedState.signature == EEPROM_SIGNATURE) {
-    for (int i = 0; i < N_POTS; i++) {
-      messageCount[i] = loadedState.messageCount[i];
-      for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
-        potMessages[i][j].channel = loadedState.potMessages[i][j].channel;
-        potMessages[i][j].cc = loadedState.potMessages[i][j].cc;
-        potMessages[i][j].inverted = loadedState.potMessages[i][j].inverted;
-        potMessages[i][j].minValue = loadedState.potMessages[i][j].minValue;
-        potMessages[i][j].maxValue = loadedState.potMessages[i][j].maxValue;
-        potMessages[i][j].value = loadedState.potMessages[i][j].value;
-      }
-    }
-
-    currentStateSlot = slot;
-
-    Serial.print("State loaded from slot ");
-    Serial.println(slot + 1);
-  } else {
-    Serial.print("No valid state found in slot ");
-    Serial.println(slot + 1);
-  }
-}
-
-// *********************** //
-// CLEAR STATE FROM SLOT
-// *********************** //
-void clearStateFromSlot(int slot) {
-  if (slot < 0 || slot >= NUM_STATE_SLOTS) return;
-
-  // Calculate EEPROM address for this slot
-  int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
-
-  // Create empty state with invalid signature
-  SavedSettings emptyState;
-  emptyState.signature = 0;  // Invalid signature
-  emptyState.version = SETTINGS_VERSION;
-
-  // Set default MIDI values
-  for (int i = 0; i < N_POTS; i++) {
-    emptyState.messageCount[i] = 1;  // Default to 1 message
-    for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
-      emptyState.potMessages[i][j].channel = 0;
-      emptyState.potMessages[i][j].cc = 0;
-      emptyState.potMessages[i][j].value = 0;
-    }
-  }
-
-  // Write to EEPROM
-  EEPROM.put(slotAddress, emptyState);
-
-  // If we cleared the currently loaded state, reset currentStateSlot and save global settings
-  if (currentStateSlot == slot) {
-    currentStateSlot = -1;
-    saveGlobalSettingsToEEPROM();  // Only save global settings when the current state slot changes
-  }
-
-  Serial.print("State cleared from slot ");
-  Serial.println(slot + 1);
-}
-
-// *********************** //
-// INITIALISE
-// *********************** //
-void initController() {
-
-  // INIT BUTTONS
-  for (int i = 0; i < NUM_BUTTONS; i++) {
-    pinMode(BUTTON_PINS[i], INPUT_PULLDOWN);
-  }
-
-  // INIT OLED
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 allocation failed"));
-    for (;;)
-      ;
-  }
-
-  // FIRST: Initialize display with default settings
-  display.clearDisplay();
-  display.fillRect(0, 0, 128, 64, 1);          // WHITE BACKGROUND
-  display.drawRoundRect(1, 1, 126, 62, 3, 0);  // OUTER BOX
-  display.drawRoundRect(17, 38, 94, 8, 3, 0);  // LOADING BAR BORDER
-  display.fillRoundRect(19, 40, 4, 4, 1, 0);   // LOADING BAR INNER
-
-  // TEXT
-  display.setTextColor(0);
-  display.setTextSize(3);
-  display.setTextWrap(false);
-  display.setFont(&Picopixel);
-  display.setCursor(29, 26);
-  display.print("M C 8 P");
-  display.setTextSize(1);
-  display.setCursor(58, 55);
-  display.print("v");
-  display.print(FIRMWARE_VERSION);
-  display.display();
-
-  // INIT POTS
-  for (int i = 0; i < N_POTS; i++) {
-    responsivePot[i].setAnalogResolution(1023);
-  }
-
-  // INITIALIZE TEMP OVERRIDE VALUES TO 0
-  for (int i = 0; i < N_POTS; i++) {
-    originalMidiValues[i] = 0;
-    tempMidiValues[i] = 0;
-    postOverridePotPositions[i] = 0;
-    catchUpStartValue[i] = 0;
-    catchUpStartPotPos[i] = 0;
-    catchUpActive[i] = false;
-  }
-
-  // LOADING BAR UPDATE
-  display.fillRoundRect(19, 40, 30, 4, 1, 0);
-  display.display();
-  delay(250);
-
-  // SECOND: Load global settings (display inversion and edit pot)
-  Serial.println("=== BOOTUP DEBUG ===");
-  Serial.println("Loading global settings...");
-  loadGlobalSettingsFromEEPROM();
-
-  // THIRD: Load MIDI settings from EEPROM
-  Serial.println("Loading MIDI settings...");
-  loadSettingsFromEEPROM();
-
-  // DEBUG: Print loaded MIDI values for each pot
-  Serial.println("=== LOADED MIDI VALUES ===");
-  for (int i = 0; i < N_POTS; i++) {
-    Serial.print("Pot ");
-    Serial.print(i);
-    Serial.print(" (Pin A");
-    Serial.print(POT_PIN[i] - A0);
-    Serial.print("): ");
-    Serial.print("messageCount=");
-    Serial.print(messageCount[i]);
-    if (messageCount[i] > 0) {
-      Serial.print(", channel=");
-      if (potMessages[i][0].channel == 16) {
-        Serial.print("OMNI");
-      } else {
-        Serial.print(potMessages[i][0].channel + 1);
-      }
-      Serial.print(", cc=");
-      Serial.print(potMessages[i][0].cc);
-      Serial.print(", inverted=");
-      Serial.print(potMessages[i][0].inverted ? "YES" : "NO");
-      Serial.print(", min=");
-      Serial.print(potMessages[i][0].minValue);
-      Serial.print(", max=");
-      Serial.print(potMessages[i][0].maxValue);
-      Serial.print(", value=");
-      Serial.println(potMessages[i][0].value);
-    } else {
-      Serial.println(" (no messages)");
-    }
-  }
-  Serial.println("=== END DEBUG ===");
-
-  // LOADING BAR UPDATE
-  display.fillRoundRect(19, 40, 60, 4, 1, 0);
-  display.display();
-  delay(250);
-
-  // INIT MIDI MESSAGES - WILL USE DEFAULT IF NONE ARE SAVED
-  bool settingsLoaded = false;
-  for (int i = 0; i < N_POTS; i++) {
-    if (messageCount[i] > 0) {
-      settingsLoaded = true;
-      break;
-    }
-  }
-
-  if (!settingsLoaded) {
-    Serial.println("No valid settings loaded, using defaults");
-    for (int i = 0; i < N_POTS; i++) {
-      messageCount[i] = 1;
-      potMessages[i][0].channel = potChannels[i];
-      potMessages[i][0].cc = potCCs[i];
-      potMessages[i][0].inverted = false;
-      potMessages[i][0].minValue = 0;
-      potMessages[i][0].maxValue = 127;
-      potMessages[i][0].value = 0;
-
-      Serial.print("Default for Pot ");
-      Serial.print(i);
-      Serial.print(": channel=");
-      Serial.print(potMessages[i][0].channel);
-      Serial.print(", cc=");
-      Serial.print(potMessages[i][0].cc);
-      Serial.println();
-    }
-  }
-
-  // Read initial pot positions and update MIDI values
-  Serial.println("=== READING INITIAL POT POSITIONS ===");
-  for (int i = 0; i < N_POTS; i++) {
-    potReading[i] = analogRead(POT_PIN[i]);
-    responsivePot[i].update(potReading[i]);
-    potState[i] = responsivePot[i].getValue();
-    currentMidiValue[i] = map(potState[i], 0, 1023, 0, 127);
-
-    Serial.print("Pot ");
-    Serial.print(i);
-    Serial.print(": raw=");
-    Serial.print(potReading[i]);
-    Serial.print(", filtered=");
-    Serial.print(potState[i]);
-    Serial.print(", MIDI=");
-    Serial.print(currentMidiValue[i]);
-
-    if (messageCount[i] > 0) {
-      int finalValue = mapMidiValueWithParams(currentMidiValue[i],
-                                              potMessages[i][0].minValue,
-                                              potMessages[i][0].maxValue,
-                                              potMessages[i][0].inverted);
-      potMessages[i][0].value = finalValue;
-      Serial.print(" (stored value set to ");
-      Serial.print(finalValue);
-      Serial.print(")");
-    }
-    Serial.println();
-  }
-  Serial.println("=== END POT READING ===");
-
-  // LOADING BAR UPDATE
-  display.fillRoundRect(19, 40, 90, 4, 1, 0);
-  display.display();
-  delay(1000);
-
-  // Send initial MIDI values
-  Serial.println("=== SENDING INITIAL MIDI VALUES ===");
-  for (int i = 0; i < N_POTS; i++) {
-    for (int j = 0; j < messageCount[i]; j++) {
-      int finalValue = mapMidiValueWithParams(potMessages[i][j].value,
-                                              potMessages[i][j].minValue,
-                                              potMessages[i][j].maxValue,
-                                              potMessages[i][j].inverted);
-
-      if (potMessages[i][j].channel == 16) {  // OMNI
-        for (byte ch = 0; ch < 16; ch++) {
-          sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
-        }
-        Serial.print("Sent MIDI: Pot ");
-        Serial.print(i);
-        Serial.print(", Message ");
-        Serial.print(j);
-        Serial.print(": Ch=OMNI, CC=");
-        Serial.print(potMessages[i][j].cc);
-        Serial.print(", Final Value=");
-        Serial.print(finalValue);
-        Serial.print(", Range=[");
-        Serial.print(potMessages[i][j].minValue);
-        Serial.print("-");
-        Serial.print(potMessages[i][j].maxValue);
-        Serial.print("], Dir=");
-        Serial.println(potMessages[i][j].inverted ? "INV" : "NOR");
-      } else {
-        sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
-        Serial.print("Sent MIDI: Pot ");
-        Serial.print(i);
-        Serial.print(", Message ");
-        Serial.print(j);
-        Serial.print(": Ch=");
-        Serial.print(potMessages[i][j].channel + 1);
-        Serial.print(", CC=");
-        Serial.print(potMessages[i][j].cc);
-        Serial.print(", Final Value=");
-        Serial.print(finalValue);
-        Serial.print(", Range=[");
-        Serial.print(potMessages[i][j].minValue);
-        Serial.print("-");
-        Serial.print(potMessages[i][j].maxValue);
-        Serial.print("], Dir=");
-        Serial.println(potMessages[i][j].inverted ? "INV" : "NOR");
-      }
-    }
-  }
-
-  // Final loading bar completion
-  display.fillRoundRect(19, 40, 94, 4, 1, 0);
-  display.display();
-  delay(500);
-
-  // Apply display inversion setting (already loaded from EEPROM)
-  if (displayInverted) {
-    display.invertDisplay(true);
-    Serial.println("Display inversion ENABLED");
-  } else {
-    display.invertDisplay(false);
-    Serial.println("Display inversion DISABLED");
-  }
-
-  Serial.println("=== BOOTUP COMPLETE ===");
-}
-
-// *********************** //
-// HANDLE POT PARAMETER EDIT
-// *********************** //
-void handleParameterEditWithPot() {
-  // Only process when in assign screen and editing mode
-  if (currentScreen != ASSIGN_SCREEN || !assignEditingMode) {
-    return;
-  }
-
-  // Read the selected edit potentiometer
-  int pot8Raw = analogRead(POT_PIN[editPotSelection]);
-
-  // Update responsive analog reading for smoother values
-  responsivePot[editPotSelection].update(pot8Raw);
-  int potValue = responsivePot[editPotSelection].getValue();
-
-  // Debounce: only process if value has changed significantly
-  if (abs(potValue - lastPot8Value) > 5) {
-    lastPot8Value = potValue;
-    lastPot8ChangeTime = millis();
-
-    // Map to appropriate range based on what we're editing
-    bool valueChanged = false;
-
-    switch (assignEditMode) {
-      case ASSIGN_EDIT_CHANNEL:
-        {
-          // Map 0-1023 to 0-16 (channels 1-16 + OMNI)
-          int newChannel = map(potValue, 0, 1023, 0, 16);
-          if (newChannel != potMessages[selectedPot][selectedMessage].channel) {
-            potMessages[selectedPot][selectedMessage].channel = newChannel;
-            valueChanged = true;
-            Serial.print("Channel set to: ");
-            if (potMessages[selectedPot][selectedMessage].channel == 16) {
-              Serial.println("OMNI");
-            } else {
-              Serial.println(potMessages[selectedPot][selectedMessage].channel + 1);
-            }
-          }
-          break;
-        }
-
-      case ASSIGN_EDIT_CC:
-        {
-          // Map 0-1023 to 0-127
-          int newCC = map(potValue, 0, 1023, 0, 127);
-          if (newCC != potMessages[selectedPot][selectedMessage].cc) {
-            potMessages[selectedPot][selectedMessage].cc = newCC;
-            valueChanged = true;
-            Serial.print("CC set to: ");
-            Serial.println(potMessages[selectedPot][selectedMessage].cc);
-          }
-          break;
-        }
-
-      case ASSIGN_EDIT_MIN:
-        {
-          // Map 0-1023 to 0-127
-          int newMin = map(potValue, 0, 1023, 0, 127);
-          if (newMin != potMessages[selectedPot][selectedMessage].minValue) {
-            potMessages[selectedPot][selectedMessage].minValue = newMin;
-            // Ensure max value is at least min value
-            if (potMessages[selectedPot][selectedMessage].maxValue < newMin) {
-              potMessages[selectedPot][selectedMessage].maxValue = newMin;
-            }
-            valueChanged = true;
-            Serial.print("Min value set to: ");
-            Serial.println(potMessages[selectedPot][selectedMessage].minValue);
-          }
-          break;
-        }
-
-      case ASSIGN_EDIT_MAX:
-        {
-          // Map 0-1023 to 0-127
-          int newMax = map(potValue, 0, 1023, 0, 127);
-          if (newMax != potMessages[selectedPot][selectedMessage].maxValue) {
-            potMessages[selectedPot][selectedMessage].maxValue = newMax;
-            // Ensure min value is at most max value
-            if (potMessages[selectedPot][selectedMessage].minValue > newMax) {
-              potMessages[selectedPot][selectedMessage].minValue = newMax;
-            }
-            valueChanged = true;
-            Serial.print("Max value set to: ");
-            Serial.println(potMessages[selectedPot][selectedMessage].maxValue);
-          }
-          break;
-        }
-
-      case ASSIGN_EDIT_INVERT:
-        {
-          // Use potentiometer to toggle between NOR and INV
-          // Map to 0-1, with threshold at 512 (midpoint)
-          bool newInvert = (potValue > 512);
-          if (newInvert != potMessages[selectedPot][selectedMessage].inverted) {
-            potMessages[selectedPot][selectedMessage].inverted = newInvert;
-            valueChanged = true;
-            Serial.print("Direction set to: ");
-            Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR");
-          }
-          break;
-        }
-
-      default:
-        break;
-    }
-
-    // Force screen redraw if value changed
-    if (valueChanged) {
-      drawAssignScreen();
-    }
-  }
-}
-
-// *********************** //
-// MIDI HANDLING           //
-// *********************** //
-void sendControlChange(byte cc, byte value, byte channel) {
-  // Send to DIN MIDI (Serial1)
-  MIDI.sendControlChange(cc, value, channel);
-  
-  // Send to USB MIDI
-  usbMIDI.sendControlChange(cc, value, channel);
 }
