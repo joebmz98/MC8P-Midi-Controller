@@ -374,11 +374,12 @@ void loop() {
           // Check if temporary override is active
           if (tempOverrideActive) {
             // Store temporary values but don't update the original messages
-            tempMidiValues[i] = currentMidiValue[i];
+            // Store the raw pot value for proper mapping
+            tempMidiValues[i] = potState[i];
             // Send all messages for this pot with temporary values
             for (int j = 0; j < messageCount[i]; j++) {
-              // Apply range and direction to the temporary value
-              int finalValue = mapMidiValueWithParams(currentMidiValue[i],
+              // Apply range and direction to the raw potentiometer value (0-1023)
+              int finalValue = mapMidiValueWithParams(tempMidiValues[i],
                                                       potMessages[i][j].minValue,
                                                       potMessages[i][j].maxValue,
                                                       potMessages[i][j].inverted);
@@ -1458,7 +1459,8 @@ void activateTempOverride() {
     // Store original MIDI values for all pots
     for (int i = 0; i < N_POTS; i++) {
       originalMidiValues[i] = potMessages[i][0].value;  // Store the stored MIDI value, not current
-      tempMidiValues[i] = currentMidiValue[i];          // Initialize temp values
+      // Store the RAW pot position, not the mapped MIDI value
+      tempMidiValues[i] = potState[i];  // Store raw pot value (0-1023)
     }
 
     Serial.println("Temporary MIDI override ACTIVATED");
@@ -2262,7 +2264,18 @@ void drawPotDisplay(int potIndex) {
 
   if (tempOverrideActive) {
     // During temporary override, show the temporary values
-    displayValue = tempMidiValues[potIndex];
+    // CRITICAL FIX: Map the raw pot value (0-1023) to MIDI range (0-127)
+    // Use the same mapping as normal operation for consistent display
+    if (messageCount[potIndex] > 0) {
+      // Apply range and direction to the raw potentiometer value (0-1023)
+      displayValue = mapMidiValueWithParams(tempMidiValues[potIndex],
+                                            potMessages[potIndex][0].minValue,
+                                            potMessages[potIndex][0].maxValue,
+                                            potMessages[potIndex][0].inverted);
+    } else {
+      // Fallback to simple mapping if no messages
+      displayValue = map(tempMidiValues[potIndex], 0, 1023, 0, 127);
+    }
   } else if (catchUpActive[potIndex]) {
     // During catch-up, calculate the scaled value for display
     int potMovement = potState[potIndex] - catchUpStartPotPos[potIndex];
