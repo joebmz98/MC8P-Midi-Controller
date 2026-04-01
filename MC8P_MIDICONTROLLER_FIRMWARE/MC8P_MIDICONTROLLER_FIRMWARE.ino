@@ -318,9 +318,9 @@ bool confirmSelection = true;  // Track Y/N selection (true = Yes, false = No)
 int lastPot8Value = -1;
 unsigned long lastPot8ChangeTime = 0;
 
-// ***** //
+// ***************************  //
 // SETUP
-// ***** //
+// ***************************  //
 void setup() {
 
   // BEGIN SERIAL MONITORING
