@@ -1013,10 +1013,6 @@ void readButtons() {
               }
 
               // *********************** //
-              // CONFIRM SAVE SCREEN NAVIGATION - REMOVED
-              // *********************** //
-
-              // *********************** //
               // CONFIRM ASSIGN SAVE SCREEN NAVIGATION
               // *********************** //
               else if (currentScreen == CONFIRM_ASSIGN_SAVE_SCREEN) {
@@ -1086,8 +1082,9 @@ void readButtons() {
                       Serial.println(potMessages[selectedPot][selectedMessage].minValue);
                       break;
                     case ASSIGN_EDIT_MAX:
-                      if (potMessages[selectedPot][selectedMessage].maxValue < 127) {
-                        potMessages[selectedPot][selectedMessage].maxValue++;
+                      // PREV button should DECREASE the max value (move down)
+                      if (potMessages[selectedPot][selectedMessage].maxValue > 0) {
+                        potMessages[selectedPot][selectedMessage].maxValue--;
                         if (potMessages[selectedPot][selectedMessage].maxValue < potMessages[selectedPot][selectedMessage].minValue) {
                           potMessages[selectedPot][selectedMessage].minValue =
                             potMessages[selectedPot][selectedMessage].maxValue;
@@ -1289,8 +1286,9 @@ void readButtons() {
                       Serial.println(potMessages[selectedPot][selectedMessage].minValue);
                       break;
                     case ASSIGN_EDIT_MAX:
-                      if (potMessages[selectedPot][selectedMessage].maxValue > 0) {
-                        potMessages[selectedPot][selectedMessage].maxValue--;
+                      // NEXT button should INCREASE the max value (move up)
+                      if (potMessages[selectedPot][selectedMessage].maxValue < 127) {
+                        potMessages[selectedPot][selectedMessage].maxValue++;
                         if (potMessages[selectedPot][selectedMessage].maxValue < potMessages[selectedPot][selectedMessage].minValue) {
                           potMessages[selectedPot][selectedMessage].minValue =
                             potMessages[selectedPot][selectedMessage].maxValue;
