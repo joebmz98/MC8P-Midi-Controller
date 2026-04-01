@@ -140,8 +140,6 @@ enum AssignEditMode {
 
 AssignEditMode assignEditMode = ASSIGN_POT_SELECT;
 bool assignEditingMode = false;  // True when editing values, false when selecting
-unsigned long assignFlashTimer = 0;
-bool assignFlashState = false;
 
 // ASSIGN SETTINGS
 int editPotSelection = 7;           // Default to pot 8 (index 7)
@@ -160,23 +158,11 @@ int selectedMenuItem = 0;  // 0: Assign, 1: States, 2: Settings
 // BUTTON STATE MANAGEMENT
 // ASSIGN
 bool assignButtonHeld = false;
-unsigned long assignButtonHoldStart = 0;
-const unsigned long assignHoldDuration = 2000;  // 2 seconds
 // PREV/NEXT
 bool prevButtonPressed = false;
 bool nextButtonPressed = false;
-bool prevNextHeld = false;
-unsigned long prevNextHoldStart = 0;
-const unsigned long prevNextHoldDuration = 5000;  // 5 seconds
 // ENTER
 bool enterButtonHeld = false;
-bool enterPrevHeld = false;
-bool enterNextHeld = false;
-unsigned long enterPrevHoldStart = 0;
-unsigned long enterNextHoldStart = 0;
-// MULTI-FUNCTIONAL
-bool bothButtonsHeld = false;
-unsigned long bothButtonsHoldStart = 0;
 
 // POTENTIOMETER CONFIG
 const int N_POTS = 8;  // Eight potentiometers
@@ -217,10 +203,6 @@ ResponsiveAnalogRead responsivePot[N_POTS] = {
 
 // -- POT SELECTION AND EDITING
 int selectedPot = 0;  // Default to pot 0
-unsigned long lastPotSwitchTime = 0;
-const unsigned long POT_SWITCH_DELAY = 100;  // ms delay between pot switches
-bool editingChannel = true;                  // Tracks whether we're editing channel or CC
-int valueIndicatorPos = 20;                  // X position of value indicator (starts under channel)
 
 int selectedMessage = 0;  //
 
@@ -330,16 +312,11 @@ static const unsigned char PROGMEM image_potMatrixGrid_bits[] = { 0x92, 0x40, 0x
 static const unsigned char PROGMEM image_valueIndicator_bits[] = { 0xfc };
 
 // ASSIGN PARAMETER EDITING
-int selectedParameter = 0;  // 0: Channel, 1: CC, 2: Min Range, 3: Max Range, 4: Direction
-bool parameterEditMode = false;
-unsigned long parameterFlashTimer = 0;
-bool parameterFlashState = false;
 int selectedAddRemove = 0;     // 0 = Add, 1 = Remove
 bool confirmSelection = true;  // Track Y/N selection (true = Yes, false = No)
 
 int lastPot8Value = -1;
 unsigned long lastPot8ChangeTime = 0;
-const unsigned long pot8DebounceDelay = 50;  // Debounce delay in ms
 
 // ***** //
 // SETUP
@@ -1655,8 +1632,18 @@ void saveMidiSettingsToEEPROM() {
     }
   }
 
+  // Write to EEPROM (Teensy writes are immediate, no commit needed)
   EEPROM.put(EEPROM_ADDR, settings);
+  
   Serial.println("MIDI settings saved to EEPROM");
+  
+  // Debug output
+  for (int i = 0; i < N_POTS; i++) {
+    Serial.print("Pot ");
+    Serial.print(i);
+    Serial.print(" saved with messageCount: ");
+    Serial.println(messageCount[i]);
+  }
 }
 
 // *********************** //
@@ -1667,20 +1654,78 @@ void loadMidiSettingsFromEEPROM() {
   EEPROM.get(EEPROM_ADDR, settings);
 
   if (settings.signature == EEPROM_SIGNATURE && settings.version == SETTINGS_VERSION) {
+    // Valid settings found - load them
     for (int i = 0; i < N_POTS; i++) {
-      messageCount[i] = settings.messageCount[i];
+      // Validate messageCount to ensure it's within bounds
+      if (settings.messageCount[i] >= 1 && settings.messageCount[i] <= MAX_MESSAGES_PER_POT) {
+        messageCount[i] = settings.messageCount[i];
+      } else {
+        // Invalid messageCount, use default
+        messageCount[i] = 1;
+        Serial.print("Pot ");
+        Serial.print(i);
+        Serial.println(" had invalid messageCount, reset to 1");
+      }
+      
       for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
-        potMessages[i][j].channel = settings.potMessages[i][j].channel;
-        potMessages[i][j].cc = settings.potMessages[i][j].cc;
+        // Validate channel range (0-16 where 16 is OMNI)
+        if (settings.potMessages[i][j].channel >= 0 && settings.potMessages[i][j].channel <= 16) {
+          potMessages[i][j].channel = settings.potMessages[i][j].channel;
+        } else {
+          potMessages[i][j].channel = (j == 0) ? i : 0; // Default for first message: pot channel, others: 0
+        }
+        
+        // Validate CC range
+        if (settings.potMessages[i][j].cc >= 0 && settings.potMessages[i][j].cc <= 127) {
+          potMessages[i][j].cc = settings.potMessages[i][j].cc;
+        } else {
+          potMessages[i][j].cc = (j == 0) ? 7 : 1; // Default for first message: CC7, others: CC1
+        }
+        
+        // Validate min/max range
+        if (settings.potMessages[i][j].minValue >= 0 && settings.potMessages[i][j].minValue <= 127) {
+          potMessages[i][j].minValue = settings.potMessages[i][j].minValue;
+        } else {
+          potMessages[i][j].minValue = 0;
+        }
+        
+        if (settings.potMessages[i][j].maxValue >= 0 && settings.potMessages[i][j].maxValue <= 127) {
+          potMessages[i][j].maxValue = settings.potMessages[i][j].maxValue;
+        } else {
+          potMessages[i][j].maxValue = 127;
+        }
+        
+        // Ensure min <= max
+        if (potMessages[i][j].minValue > potMessages[i][j].maxValue) {
+          potMessages[i][j].maxValue = potMessages[i][j].minValue;
+        }
+        
         potMessages[i][j].inverted = settings.potMessages[i][j].inverted;
-        potMessages[i][j].minValue = settings.potMessages[i][j].minValue;
-        potMessages[i][j].maxValue = settings.potMessages[i][j].maxValue;
         potMessages[i][j].value = settings.potMessages[i][j].value;
       }
     }
     Serial.println("MIDI settings loaded from EEPROM");
   } else {
     Serial.println("No valid MIDI settings found, using defaults");
+    // Set defaults for all pots
+    for (int i = 0; i < N_POTS; i++) {
+      messageCount[i] = 1;
+      potMessages[i][0].channel = i;
+      potMessages[i][0].cc = 7;
+      potMessages[i][0].inverted = false;
+      potMessages[i][0].minValue = 0;
+      potMessages[i][0].maxValue = 127;
+      potMessages[i][0].value = 0;
+      
+      for (int j = 1; j < MAX_MESSAGES_PER_POT; j++) {
+        potMessages[i][j].channel = 0;
+        potMessages[i][j].cc = 0;
+        potMessages[i][j].inverted = false;
+        potMessages[i][j].minValue = 0;
+        potMessages[i][j].maxValue = 127;
+        potMessages[i][j].value = 0;
+      }
+    }
   }
 }
 
@@ -1696,13 +1741,14 @@ void factoryReset() {
   // Reset all pots to default configuration
   for (int i = 0; i < N_POTS; i++) {
     messageCount[i] = 1;
-    potMessages[i][0].channel = i;
-    potMessages[i][0].cc = 7;
-    potMessages[i][0].inverted = false;
-    potMessages[i][0].minValue = 0;
-    potMessages[i][0].maxValue = 127;
-    potMessages[i][0].value = currentMidiValue[i];
+    potMessages[i][0].channel = i;        // Channel 1-8 (0-7 in code)
+    potMessages[i][0].cc = 7;             // CC 7
+    potMessages[i][0].inverted = false;   // Normal direction
+    potMessages[i][0].minValue = 0;       // Min value 0
+    potMessages[i][0].maxValue = 127;     // Max value 127
+    potMessages[i][0].value = currentMidiValue[i];  // Current pot position
 
+    // Clear any additional messages
     for (int j = 1; j < MAX_MESSAGES_PER_POT; j++) {
       potMessages[i][j].channel = 0;
       potMessages[i][j].cc = 0;
@@ -1715,13 +1761,35 @@ void factoryReset() {
 
   // Reset display settings
   displayInverted = false;
-
+  
   // Reset edit pot selection
   editPotSelection = 7;
 
-  // Save to EEPROM
+  // CRITICAL FIX: Force a complete EEPROM write with verified data
+  // First, save MIDI settings
   saveMidiSettingsToEEPROM();
+  
+  // Then save global settings
   saveGlobalSettingsToEEPROM();
+  
+  // Verify the write by reading back immediately
+  Serial.println("Verifying factory reset save...");
+  MidiSettings verifySettings;
+  EEPROM.get(EEPROM_ADDR, verifySettings);
+  
+  if (verifySettings.signature == EEPROM_SIGNATURE) {
+    Serial.println("MIDI settings verified successfully");
+    for (int i = 0; i < N_POTS; i++) {
+      Serial.print("Pot ");
+      Serial.print(i);
+      Serial.print(" messageCount: ");
+      Serial.println(verifySettings.messageCount[i]);
+    }
+  } else {
+    Serial.println("ERROR: MIDI settings verification failed - retrying");
+    // Retry save if verification failed
+    saveMidiSettingsToEEPROM();
+  }
 
   // Reset navigation states
   selectedPot = 0;
@@ -1731,6 +1799,8 @@ void factoryReset() {
   assignEditingMode = false;
 
   Serial.println("Factory reset completed!");
+  Serial.println("All pots reset to: Channel 1-8, CC7, Range 0-127, Normal direction");
+  Serial.println("=== FACTORY RESET COMPLETE ===");
 
   // Visual feedback
   for (int i = 0; i < 3; i++) {
