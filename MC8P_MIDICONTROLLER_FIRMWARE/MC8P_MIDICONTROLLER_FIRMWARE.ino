@@ -37,32 +37,35 @@
 // SOFTWARE.
 // ********************* //
 
-// LIBRARIES
+// -- LIBRARIES --
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_GFX.h>
 #include <MIDI.h>
 #include <ResponsiveAnalogRead.h>
 #include <Fonts/Picopixel.h>
 
-// USB NAME
+// -- USB NAME --
 #include <usb_names.h>
 
-// FLASH
+// -- FLASH --
 #include <EEPROM.h>
 #define EEPROM_ADDR 0            // Starting address in EEPROM
 #define EEPROM_SIGNATURE 0x55AA  // Signature to verify saved data
 
-// OLED SETUP
+// -- OLED SETUP --
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define SCREEN_ADDRESS 0x3C
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// MIDI INSTANCE
-MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);
+// -- MIDI INSTANCE --
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);  // 
 
-// STRUCTURE TO HOLD MULTIPLE MIDI MESSAGES PER POT - MOVED TO TOP
+// -- FIRMWARE VERSION --
+const char* FIRMWARE_VERSION = "2.0";
+
+// STRUCTURE TO HOLD MULTIPLE MIDI MESSAGES PER POT
 struct MidiMessageParams {
   byte channel;
   byte cc;
@@ -100,8 +103,6 @@ int mapMidiValueWithParams(int rawValue, byte minVal, byte maxVal, bool inverted
   return mappedValue;
 }
 
-// FIRMWARE VERSION
-const char* FIRMWARE_VERSION = "2.0";
 
 // BUTTON CONFIG
 const int NUM_BUTTONS = 4;
@@ -266,6 +267,29 @@ struct GlobalSettings {
   int lastLoadedState;
   int editPot;
 };
+/*
+// -- SETTINGS
+// -- GLOBAL SETTINGS
+struct GlobalSettings {
+  uint16_t signature;
+  uint8_t version;
+  bool displayInverted;
+  int editPot;
+};
+// -- POT MIDI CONFIG
+struct MidiMessageParams {
+  byte channel;
+  byte cc;
+  bool inverted;  // true = inverted (127->0), false = normal (0->127)
+  byte minValue;  // Minimum value for CC range (0-127)
+  byte maxValue;  // Maximum value for CC range (0-127)
+  int value;      // Current stored value
+};
+// -- STATES
+struct States {
+  MidiMessageParams pot
+}
+*/
 
 // Version constants
 #define SETTINGS_VERSION 2
@@ -361,6 +385,7 @@ void setup() {
   // SERIAL1 IS FOR MIDI OUTPPUT
   Serial.begin(9600);
   Serial1.begin(31250);
+  // -- INIT MIDI 
   MIDI.begin();
   Serial1.setTX(1);  // SET MIDI OUTPUT PIN
 
@@ -418,10 +443,10 @@ void loop() {
               // Check for OMNI channel
               if (potMessages[i][j].channel == 16) {  // OMNI
                 for (byte ch = 0; ch < 16; ch++) {
-                  MIDI.sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
+                  sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
                 }
               } else {
-                MIDI.sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
+                sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
               }
             }
           } else {
@@ -472,10 +497,10 @@ void loop() {
                   // Check for OMNI channel
                   if (potMessages[i][j].channel == 16) {  // OMNI
                     for (byte ch = 0; ch < 16; ch++) {
-                      MIDI.sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
+                      sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
                     }
                   } else {
-                    MIDI.sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
+                    sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
                   }
                 }
 
@@ -504,10 +529,10 @@ void loop() {
                   // Check for OMNI channel
                   if (potMessages[i][j].channel == 16) {  // OMNI
                     for (byte ch = 0; ch < 16; ch++) {
-                      MIDI.sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
+                      sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
                     }
                   } else {
-                    MIDI.sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
+                    sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
                   }
                 }
                 Serial.println(" (in dead zone)");
@@ -525,10 +550,10 @@ void loop() {
                 // Check for OMNI channel
                 if (potMessages[i][j].channel == 16) {  // OMNI
                   for (byte ch = 0; ch < 16; ch++) {
-                    MIDI.sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
+                    sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
                   }
                 } else {
-                  MIDI.sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
+                  sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
                 }
               }
             }
@@ -2015,14 +2040,14 @@ void drawAssignScreen() {
   // Ensure scroll offset is within valid range
   int maxOffset = max(0, messageCount[selectedPot] - MAX_VISIBLE_MESSAGES);
   scrollOffset = constrain(scrollOffset, 0, maxOffset);
-  
+
   // Also ensure selected message is visible by adjusting scroll offset if needed
   if (selectedMessage < scrollOffset) {
     scrollOffset = selectedMessage;
   } else if (selectedMessage >= scrollOffset + MAX_VISIBLE_MESSAGES) {
     scrollOffset = selectedMessage - MAX_VISIBLE_MESSAGES + 1;
   }
-  
+
   // Re-constrain after adjustments
   scrollOffset = constrain(scrollOffset, 0, maxOffset);
 
@@ -3561,7 +3586,7 @@ void initController() {
 
       if (potMessages[i][j].channel == 16) {  // OMNI
         for (byte ch = 0; ch < 16; ch++) {
-          MIDI.sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
+          sendControlChange(potMessages[i][j].cc, finalValue, ch + 1);
         }
         Serial.print("Sent MIDI: Pot ");
         Serial.print(i);
@@ -3578,7 +3603,7 @@ void initController() {
         Serial.print("], Dir=");
         Serial.println(potMessages[i][j].inverted ? "INV" : "NOR");
       } else {
-        MIDI.sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
+        sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
         Serial.print("Sent MIDI: Pot ");
         Serial.print(i);
         Serial.print(", Message ");
@@ -3728,4 +3753,15 @@ void handleParameterEditWithPot() {
       drawAssignScreen();
     }
   }
+}
+
+// *********************** //
+// MIDI HANDLING           //
+// *********************** //
+void sendControlChange(byte cc, byte value, byte channel) {
+  // Send to DIN MIDI (Serial1)
+  MIDI.sendControlChange(cc, value, channel);
+  
+  // Send to USB MIDI
+  usbMIDI.sendControlChange(cc, value, channel);
 }
