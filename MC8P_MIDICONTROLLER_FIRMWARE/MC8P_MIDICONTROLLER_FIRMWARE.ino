@@ -624,6 +624,11 @@ void readButtons() {
 
             case 0:  // ASSIGN BUTTON
               if (currentScreen == MAIN_SCREEN) {
+                // Check if we're in TEMP mode
+                if (tempOverrideActive) {
+                  // Deactivate temp mode first
+                  deactivateTempOverride();
+                }
                 // Single press from MAIN_SCREEN goes to MENU_SCREEN
                 currentScreen = MENU_SCREEN;
                 selectedMenuItem = 0;  // Reset to first menu item
@@ -1440,29 +1445,6 @@ void readButtons() {
       if (millis() - enterPressTime >= tempOverrideHoldTime) {
         activateTempOverride();
       }
-    }
-  }
-
-  // *********************** //
-  // RESET ALL MIDI CONTROL SETTINGS
-  // *********************** //
-  // ON THE ASSIGN SCREEN AND HOLDING THE NEXT BUTTON AND THE PREV BUTTON
-  // RESETS ALL MIDI CONTROL MESSAGES BACK TO THE DEFAULT SETTINGS
-  if (currentScreen == ASSIGN_SCREEN && buttonState[2] == HIGH && buttonState[3] == HIGH && buttonState[0] == LOW && buttonState[1] == LOW) {
-    if (!prevNextHeld) {
-      prevNextHeld = true;
-      prevNextHoldStart = millis();
-      Serial.println("PREV+NEXT combination detected - start hold timer");
-    } else if (millis() - prevNextHoldStart >= prevNextHoldDuration) {
-      // RESET
-      //resetToDefaultSettings();
-      Serial.println("PREV+NEXT held for 5s - reset to default settings");
-      prevNextHeld = false;
-    }
-  } else {
-    if (prevNextHeld) {
-      Serial.println("PREV+NEXT combination released");
-      prevNextHeld = false;
     }
   }
 }
