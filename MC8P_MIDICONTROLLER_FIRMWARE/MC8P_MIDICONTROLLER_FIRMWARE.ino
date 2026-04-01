@@ -60,7 +60,7 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // -- MIDI INSTANCE --
-MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);  // 
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);  //
 
 // -- FIRMWARE VERSION --
 const char* FIRMWARE_VERSION = "2.0";
@@ -104,7 +104,7 @@ int mapMidiValueWithParams(int rawValue, byte minVal, byte maxVal, bool inverted
 }
 
 
-// BUTTON CONFIG
+// -- BUTTON CONFIG
 const int NUM_BUTTONS = 4;
 const int BUTTON_PINS[NUM_BUTTONS] = { 5, 6, 7, 8 };
 const char* BUTTON_NAMES[NUM_BUTTONS] = { "ASSIGN", "ENTER", "PREV", "NEXT" };
@@ -117,16 +117,11 @@ const unsigned long debounceDelay = 15;  // BUTTON DEBOUNCE
 enum ScreenState { MAIN_SCREEN,
                    MENU_SCREEN,
                    ASSIGN_SCREEN,
-                   STATES_SCREEN,
                    SETTINGS_SCREEN,
                    ASSIGN_SETTINGS_SCREEN,
                    DISPLAY_SETTINGS_SCREEN,
                    ABOUT_SCREEN,
                    RESET_SCREEN,
-                   SAVE_STATES_SCREEN,
-                   LOAD_STATES_SCREEN,
-                   CLEAR_STATES_SCREEN,
-                   CONFIRM_SAVE_SCREEN,
                    CONFIRM_ASSIGN_SAVE_SCREEN,
                    CONFIRM_RESET_SCREEN };
 ScreenState currentScreen = MAIN_SCREEN;
@@ -153,11 +148,11 @@ int editPotSelection = 7;           // Default to pot 8 (index 7)
 bool editingAssignSetting = false;  // Flag for edit mode
 
 // DISPLAY SETTINGS
-bool displayInverted = false;          // Default: No
-bool editingDisplaySetting = false;    // Flag to indicate we're editing the value
-unsigned long editFlashTimer = 0;      // Timer for flashing effect
-bool flashState = false;               // Current flash state
-bool originalDisplayInverted = false;  // Store original value when entering edit mode
+bool displayInverted = false;        // Default: No
+bool editingDisplaySetting = false;  // Flag to indicate we're editing the value
+unsigned long editFlashTimer = 0;    // Timer for flashing effect
+bool flashState = false;             // Current flash state
+bool originalDisplayInverted;        // Store original value when entering edit mode
 
 // MENU NAVIGATION
 int selectedMenuItem = 0;  // 0: Assign, 1: States, 2: Settings
@@ -196,7 +191,7 @@ const int MAX_MESSAGES_PER_POT = 10;                          // Maximum number 
 MidiMessageParams potMessages[N_POTS][MAX_MESSAGES_PER_POT];  // Array to store messages
 byte messageCount[N_POTS] = { 0 };                            // Track how many messages each pot has
 
-// ARRAYS TO STORE POT VALUES AND STATES
+// -- ARRAYS TO STORE POT VALUES AND STATES
 int potReading[N_POTS] = { 0 };
 int potState[N_POTS] = { 0 };
 int potPState[N_POTS] = { 0 };
@@ -220,7 +215,7 @@ ResponsiveAnalogRead responsivePot[N_POTS] = {
   ResponsiveAnalogRead(POT_PIN[7], true, snapMultiplier)
 };
 
-// POT SELECTION AND EDITING
+// -- POT SELECTION AND EDITING
 int selectedPot = 0;  // Default to pot 0
 unsigned long lastPotSwitchTime = 0;
 const unsigned long POT_SWITCH_DELAY = 100;  // ms delay between pot switches
@@ -244,8 +239,8 @@ int catchUpStartPotPos[N_POTS] = { 0 };         // Pot position when catch-up st
 bool confirmAssignSave = true;  // Track Y/N selection for ASSIGN save confirmation
 
 // EEPROM STRUCTURES
-// STRUCTURE TO SAVE TO EEPROM - UPDATED WITH NEW PARAMETERS
-struct SavedSettings {
+// STRUCTURE TO SAVE MIDI CONFIGURATION TO EEPROM
+struct MidiSettings {
   uint16_t signature;
   uint8_t version;
   byte messageCount[N_POTS];
@@ -264,46 +259,15 @@ struct GlobalSettings {
   uint16_t signature;
   uint8_t version;
   bool displayInverted;
-  int lastLoadedState;
   int editPot;
 };
-/*
-// -- SETTINGS
-// -- GLOBAL SETTINGS
-struct GlobalSettings {
-  uint16_t signature;
-  uint8_t version;
-  bool displayInverted;
-  int editPot;
-};
-// -- POT MIDI CONFIG
-struct MidiMessageParams {
-  byte channel;
-  byte cc;
-  bool inverted;  // true = inverted (127->0), false = normal (0->127)
-  byte minValue;  // Minimum value for CC range (0-127)
-  byte maxValue;  // Maximum value for CC range (0-127)
-  int value;      // Current stored value
-};
-// -- STATES
-struct States {
-  MidiMessageParams pot
-}
-*/
 
-// Version constants
+// -- EEPROM VERSION
 #define SETTINGS_VERSION 2
-#define GLOBAL_SETTINGS_VERSION 1
+#define GLOBAL_SETTINGS_VERSION 2
 
-// STATE SLOTS - For saving/loading complete configurations
-#define NUM_STATE_SLOTS 8
-SavedSettings stateSlots[NUM_STATE_SLOTS];
-int pendingSaveSlot = 0;       // Store which slot we're about to save to
-bool confirmSelection = true;  // Track Y/N selection (true = Yes, false = No)
-int currentStateSlot = -1;     // Track which state is currently loaded (-1 = none/initial state)
-
-// EEPROM address for global settings (after all state slots)
-#define GLOBAL_EEPROM_ADDR (EEPROM_ADDR + (sizeof(SavedSettings) * NUM_STATE_SLOTS))
+// EEPROM address for global settings
+#define GLOBAL_EEPROM_ADDR (EEPROM_ADDR)
 
 // DISPLAY
 // MAIN SCREEN DISPLAY CONFIG FOR EACH POT
@@ -370,7 +334,8 @@ int selectedParameter = 0;  // 0: Channel, 1: CC, 2: Min Range, 3: Max Range, 4:
 bool parameterEditMode = false;
 unsigned long parameterFlashTimer = 0;
 bool parameterFlashState = false;
-int selectedAddRemove = 0;  // 0 = Add, 1 = Remove
+int selectedAddRemove = 0;     // 0 = Add, 1 = Remove
+bool confirmSelection = true;  // Track Y/N selection (true = Yes, false = No)
 
 int lastPot8Value = -1;
 unsigned long lastPot8ChangeTime = 0;
@@ -385,7 +350,7 @@ void setup() {
   // SERIAL1 IS FOR MIDI OUTPPUT
   Serial.begin(9600);
   Serial1.begin(31250);
-  // -- INIT MIDI 
+  // -- INIT MIDI
   MIDI.begin();
   Serial1.setTX(1);  // SET MIDI OUTPUT PIN
 
@@ -607,8 +572,6 @@ void loop() {
     drawMenuScreen();
   } else if (currentScreen == ASSIGN_SCREEN) {
     drawAssignScreen();
-  } else if (currentScreen == STATES_SCREEN) {
-    drawStatesMenuScreen();
   } else if (currentScreen == SETTINGS_SCREEN) {
     drawSettingsMenuScreen();
   } else if (currentScreen == ASSIGN_SETTINGS_SCREEN) {  // NEW
@@ -619,14 +582,6 @@ void loop() {
     drawAboutScreen();
   } else if (currentScreen == RESET_SCREEN) {
     drawConfirmResetPopup();
-  } else if (currentScreen == SAVE_STATES_SCREEN) {
-    drawSaveStates();
-  } else if (currentScreen == LOAD_STATES_SCREEN) {
-    drawLoadStates();
-  } else if (currentScreen == CLEAR_STATES_SCREEN) {
-    drawClearStates();
-  } else if (currentScreen == CONFIRM_SAVE_SCREEN) {
-    drawConfirmSavePopup();
   } else if (currentScreen == CONFIRM_ASSIGN_SAVE_SCREEN) {
     drawConfirmAssignSavePopup();
   } else if (currentScreen == CONFIRM_RESET_SCREEN) {
@@ -720,15 +675,10 @@ void readButtons() {
                   selectedMenuItem = 0;  // Keep Assign Settings selected
                   Serial.println("ASSIGN pressed - saving and returning to SETTINGS_SCREEN");
                 }
-              } else if (currentScreen == STATES_SCREEN) {
-                // From STATES_SCREEN, ASSIGN button goes back to MENU_SCREEN
-                currentScreen = MENU_SCREEN;
-                selectedMenuItem = 1;  // Keep States selected in menu
-                Serial.println("ASSIGN pressed - returning to MENU_SCREEN from STATES_SCREEN");
               } else if (currentScreen == SETTINGS_SCREEN) {
                 // From SETTINGS_SCREEN, ASSIGN button goes back to MENU_SCREEN
                 currentScreen = MENU_SCREEN;
-                selectedMenuItem = 2;  // Keep Settings selected in menu
+                selectedMenuItem = 1;  // Keep Settings selected in menu
                 Serial.println("ASSIGN pressed - returning to MENU_SCREEN from SETTINGS_SCREEN");
               } else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
                 if (editingDisplaySetting) {
@@ -760,25 +710,6 @@ void readButtons() {
                 currentScreen = SETTINGS_SCREEN;
                 selectedMenuItem = 3;  // Keep Factory Reset selected
                 Serial.println("ASSIGN pressed - Factory reset cancelled, returning to SETTINGS_SCREEN");
-              } else if (currentScreen == SAVE_STATES_SCREEN) {
-                // From SAVE_STATES_SCREEN, ASSIGN button goes back to STATES_SCREEN
-                currentScreen = STATES_SCREEN;
-                selectedMenuItem = 0;  // Reset to first menu item
-                Serial.println("ASSIGN pressed - returning to STATES_SCREEN from SAVE_STATES_SCREEN");
-              } else if (currentScreen == LOAD_STATES_SCREEN) {
-                // From LOAD_STATES_SCREEN, ASSIGN button goes back to STATES_SCREEN
-                currentScreen = STATES_SCREEN;
-                selectedMenuItem = 0;
-                Serial.println("ASSIGN pressed - returning to STATES_SCREEN from LOAD_STATES_SCREEN");
-              } else if (currentScreen == CLEAR_STATES_SCREEN) {
-                // From CLEAR_STATES_SCREEN, ASSIGN button goes back to STATES_SCREEN
-                currentScreen = STATES_SCREEN;
-                selectedMenuItem = 0;
-                Serial.println("ASSIGN pressed - returning to STATES_SCREEN from CLEAR_STATES_SCREEN");
-              } else if (currentScreen == CONFIRM_SAVE_SCREEN) {
-                // Cancel save and return to SAVE_STATES_SCREEN
-                currentScreen = SAVE_STATES_SCREEN;
-                Serial.println("ASSIGN pressed - Save cancelled, returning to SAVE_STATES_SCREEN");
               }
               break;
 
@@ -800,36 +731,10 @@ void readButtons() {
                     assignEditingMode = false;
                     Serial.println("ENTER pressed - switching to ASSIGN_SCREEN");
                     break;
-                  case 1:                           // States
-                    currentScreen = STATES_SCREEN;  // Switch to States screen
-                    selectedMenuItem = 0;           // Reset selection for States menu
-                    Serial.println("ENTER pressed - switching to STATES_SCREEN");
-                    break;
-                  case 2:                             // Settings
-                    currentScreen = SETTINGS_SCREEN;  // Switch to Settings screen
-                    selectedMenuItem = 0;             // Reset selection for Settings menu
+                  case 1:  // Settings
+                    currentScreen = SETTINGS_SCREEN;
+                    selectedMenuItem = 0;
                     Serial.println("ENTER pressed - switching to SETTINGS_SCREEN");
-                    break;
-                }
-              }
-
-              // STATES SCREEN - CONFIRM SELECTION
-              else if (currentScreen == STATES_SCREEN) {
-                switch (selectedMenuItem) {
-                  case 0:  // Save state
-                    currentScreen = SAVE_STATES_SCREEN;
-                    selectedMenuItem = 0;  // Reset to first state slot
-                    Serial.println("ENTER pressed - switching to SAVE_STATES_SCREEN");
-                    break;
-                  case 1:  // Load state
-                    currentScreen = LOAD_STATES_SCREEN;
-                    selectedMenuItem = 0;  // Reset to first state slot
-                    Serial.println("ENTER pressed - switching to LOAD_STATES_SCREEN");
-                    break;
-                  case 2:  // Clear state
-                    currentScreen = CLEAR_STATES_SCREEN;
-                    selectedMenuItem = 0;  // Reset to first state slot
-                    Serial.println("ENTER pressed - switching to CLEAR_STATES_SCREEN");
                     break;
                 }
               }
@@ -912,79 +817,12 @@ void readButtons() {
                 }
               }
 
-              // SAVE STATES SCREEN - CONFIRM SELECTION
-              else if (currentScreen == SAVE_STATES_SCREEN) {
-                Serial.print("ENTER pressed - Preparing to save to State #");
-                Serial.println(selectedMenuItem + 1);
-
-                // Store the slot we're about to save to
-                pendingSaveSlot = selectedMenuItem;
-                confirmSelection = true;  // Default to Yes
-                currentScreen = CONFIRM_SAVE_SCREEN;
-                Serial.println("Switching to CONFIRM_SAVE_SCREEN");
-              }
-
-              // LOAD STATES SCREEN - CONFIRM SELECTION
-              else if (currentScreen == LOAD_STATES_SCREEN) {
-                Serial.print("ENTER pressed - Loading State #");
-                Serial.println(selectedMenuItem + 1);
-
-                // Load settings from the selected state slot
-                loadStateFromSlot(selectedMenuItem);
-
-                // Return to STATES_SCREEN after loading
-                currentScreen = STATES_SCREEN;
-                selectedMenuItem = 0;
-                Serial.println("Returning to STATES_SCREEN");
-              }
-
-              // CLEAR STATES SCREEN - CONFIRM SELECTION
-              else if (currentScreen == CLEAR_STATES_SCREEN) {
-                Serial.print("ENTER pressed - Clearing State #");
-                Serial.println(selectedMenuItem + 1);
-
-                // Clear the selected state slot
-                clearStateFromSlot(selectedMenuItem);
-
-                // Return to STATES_SCREEN after clearing
-                currentScreen = STATES_SCREEN;
-                selectedMenuItem = 0;
-                Serial.println("Returning to STATES_SCREEN");
-              }
-
-              // CONFIRM SAVE SCREEN - CONFIRM SELECTION
-              else if (currentScreen == CONFIRM_SAVE_SCREEN) {
-                if (confirmSelection) {
-                  // User selected YES - save the state
-                  Serial.print("CONFIRM - Saving state to slot ");
-                  Serial.println(pendingSaveSlot + 1);
-                  saveStateToSlot(pendingSaveSlot);
-                } else {
-                  // User selected NO - don't save
-                  Serial.println("CONFIRM - Save cancelled");
-                }
-
-                // Return to SAVE_STATES_SCREEN
-                currentScreen = SAVE_STATES_SCREEN;
-                Serial.println("Returning to SAVE_STATES_SCREEN");
-              }
-
               // CONFIRM ASSIGN SAVE SCREEN - CONFIRM SELECTION
               else if (currentScreen == CONFIRM_ASSIGN_SAVE_SCREEN) {
                 if (confirmAssignSave) {
-                  // User selected YES - save settings to current state
-                  Serial.println("CONFIRM ASSIGN - Saving settings to current state");
-
-                  // Save to the currently loaded state slot, or slot 0 if none loaded
-                  int saveSlot = (currentStateSlot >= 0) ? currentStateSlot : 0;
-                  saveStateToSlot(saveSlot);
-
-                  // Update currentStateSlot if it was -1
-                  if (currentStateSlot < 0) {
-                    currentStateSlot = saveSlot;
-                    saveGlobalSettingsToEEPROM();
-                  }
-
+                  // User selected YES - save settings
+                  Serial.println("CONFIRM ASSIGN - Saving settings");
+                  saveMidiSettingsToEEPROM();  // Save MIDI settings directly
                   // Return to MAIN_SCREEN after successful save
                   currentScreen = MAIN_SCREEN;
                   Serial.println("Returning to MAIN_SCREEN");
@@ -1014,15 +852,13 @@ void readButtons() {
                 }
               }
 
-              // ABOUT SCREEN - No selections to confirm, but you could add functionality here
+              // ABOUT SCREEN - No selections to confirm
               else if (currentScreen == ABOUT_SCREEN) {
-                // About screen is informational only, no actions needed
                 Serial.println("ENTER pressed on ABOUT_SCREEN - no action");
               }
 
               // RESET SCREEN - No selections to confirm
               else if (currentScreen == RESET_SCREEN) {
-                // Reset screen is just informational, no actions needed
                 Serial.println("ENTER pressed on RESET_SCREEN - no action");
               }
 
@@ -1109,25 +945,11 @@ void readButtons() {
               // MENU SCREEN NAVIGATION
               // *********************** //
               if (currentScreen == MENU_SCREEN) {
-                selectedMenuItem = (selectedMenuItem - 1 + 3) % 3;  // 3 menu items
+                selectedMenuItem = (selectedMenuItem - 1 + 2) % 2;  // 2 menu items
                 Serial.print("Menu selection: ");
                 switch (selectedMenuItem) {
                   case 0: Serial.println("CC assign"); break;
-                  case 1: Serial.println("States"); break;
-                  case 2: Serial.println("Settings"); break;
-                }
-              }
-
-              // *********************** //
-              // STATES SCREEN NAVIGATION
-              // *********************** //
-              else if (currentScreen == STATES_SCREEN) {
-                selectedMenuItem = (selectedMenuItem - 1 + 3) % 3;  // 3 states menu items
-                Serial.print("States menu selection: ");
-                switch (selectedMenuItem) {
-                  case 0: Serial.println("Save state"); break;
-                  case 1: Serial.println("Load state"); break;
-                  case 2: Serial.println("Clear state"); break;
+                  case 1: Serial.println("Settings"); break;
                 }
               }
 
@@ -1135,7 +957,7 @@ void readButtons() {
               // SETTINGS SCREEN NAVIGATION
               // *********************** //
               else if (currentScreen == SETTINGS_SCREEN) {
-                selectedMenuItem = (selectedMenuItem - 1 + 4) % 4;  // Now 4 settings menu items
+                selectedMenuItem = (selectedMenuItem - 1 + 4) % 4;  // 4 settings menu items
                 Serial.print("Settings menu selection: ");
                 switch (selectedMenuItem) {
                   case 0: Serial.println("Assign Settings"); break;
@@ -1172,7 +994,7 @@ void readButtons() {
                   // Toggle the actual boolean that moves the box
                   bool oldValue = displayInverted;
                   displayInverted = !displayInverted;
-                  
+
                   // Save immediately when toggling
                   saveGlobalSettingsToEEPROM();
 
@@ -1191,41 +1013,8 @@ void readButtons() {
               }
 
               // *********************** //
-              // SAVE STATES SCREEN NAVIGATION
+              // CONFIRM SAVE SCREEN NAVIGATION - REMOVED
               // *********************** //
-              else if (currentScreen == SAVE_STATES_SCREEN) {
-                selectedMenuItem = (selectedMenuItem - 1 + 8) % 8;  // 8 state slots
-                Serial.print("Save state selection: State #");
-                Serial.println(selectedMenuItem + 1);
-              }
-
-              // *********************** //
-              // LOAD STATES SCREEN NAVIGATION
-              // *********************** //
-              else if (currentScreen == LOAD_STATES_SCREEN) {
-                selectedMenuItem = (selectedMenuItem - 1 + 8) % 8;  // 8 state slots
-                Serial.print("Load state selection: State #");
-                Serial.println(selectedMenuItem + 1);
-              }
-
-              // *********************** //
-              // CLEAR STATES SCREEN NAVIGATION
-              // *********************** //
-              else if (currentScreen == CLEAR_STATES_SCREEN) {
-                selectedMenuItem = (selectedMenuItem - 1 + 8) % 8;  // 8 state slots
-                Serial.print("Clear state selection: State #");
-                Serial.println(selectedMenuItem + 1);
-              }
-
-              // *********************** //
-              // CONFIRM SAVE SCREEN NAVIGATION
-              // *********************** //
-              else if (currentScreen == CONFIRM_SAVE_SCREEN) {
-                // Toggle between Y and N
-                confirmSelection = !confirmSelection;
-                Serial.print("Confirm selection toggled to: ");
-                Serial.println(confirmSelection ? "YES" : "NO");
-              }
 
               // *********************** //
               // CONFIRM ASSIGN SAVE SCREEN NAVIGATION
@@ -1371,25 +1160,11 @@ void readButtons() {
               // MENU SCREEN NAVIGATION
               // *********************** //
               if (currentScreen == MENU_SCREEN) {
-                selectedMenuItem = (selectedMenuItem + 1) % 3;  // 3 menu items
+                selectedMenuItem = (selectedMenuItem + 1) % 2;  // 2 menu items
                 Serial.print("Menu selection: ");
                 switch (selectedMenuItem) {
                   case 0: Serial.println("CC assign"); break;
-                  case 1: Serial.println("States"); break;
-                  case 2: Serial.println("Settings"); break;
-                }
-              }
-
-              // *********************** //
-              // STATES SCREEN NAVIGATION
-              // *********************** //
-              else if (currentScreen == STATES_SCREEN) {
-                selectedMenuItem = (selectedMenuItem + 1) % 3;  // 3 states menu items
-                Serial.print("States menu selection: ");
-                switch (selectedMenuItem) {
-                  case 0: Serial.println("Save state"); break;
-                  case 1: Serial.println("Load state"); break;
-                  case 2: Serial.println("Clear state"); break;
+                  case 1: Serial.println("Settings"); break;
                 }
               }
 
@@ -1397,7 +1172,7 @@ void readButtons() {
               // SETTINGS SCREEN NAVIGATION
               // *********************** //
               else if (currentScreen == SETTINGS_SCREEN) {
-                selectedMenuItem = (selectedMenuItem + 1) % 4;  // Now 4 settings menu items
+                selectedMenuItem = (selectedMenuItem + 1) % 4;  // 4 settings menu items
                 Serial.print("Settings menu selection: ");
                 switch (selectedMenuItem) {
                   case 0: Serial.println("Assign Settings"); break;
@@ -1428,7 +1203,7 @@ void readButtons() {
 
                   // Toggle the actual boolean that moves the box
                   displayInverted = !displayInverted;
-                  
+
                   // Save immediately when toggling
                   saveGlobalSettingsToEEPROM();
 
@@ -1442,43 +1217,6 @@ void readButtons() {
                   flashState = true;
                   Serial.println("NEXT pressed - entering edit mode");
                 }
-              }
-
-              // *********************** //
-              // SAVE STATES SCREEN NAVIGATION
-              // *********************** //
-              else if (currentScreen == SAVE_STATES_SCREEN) {
-                selectedMenuItem = (selectedMenuItem + 1) % 8;  // 8 state slots
-                Serial.print("Save state selection: State #");
-                Serial.println(selectedMenuItem + 1);
-              }
-
-              // *********************** //
-              // LOAD STATES SCREEN NAVIGATION
-              // *********************** //
-              else if (currentScreen == LOAD_STATES_SCREEN) {
-                selectedMenuItem = (selectedMenuItem + 1) % 8;  // 8 state slots
-                Serial.print("Load state selection: State #");
-                Serial.println(selectedMenuItem + 1);
-              }
-
-              // *********************** //
-              // CLEAR STATES SCREEN NAVIGATION
-              // *********************** //
-              else if (currentScreen == CLEAR_STATES_SCREEN) {
-                selectedMenuItem = (selectedMenuItem + 1) % 8;  // 8 state slots
-                Serial.print("Clear state selection: State #");
-                Serial.println(selectedMenuItem + 1);
-              }
-
-              // *********************** //
-              // CONFIRM SAVE SCREEN NAVIGATION
-              // *********************** //
-              else if (currentScreen == CONFIRM_SAVE_SCREEN) {
-                // Toggle between Y and N
-                confirmSelection = !confirmSelection;
-                Serial.print("Confirm selection toggled to: ");
-                Serial.println(confirmSelection ? "YES" : "NO");
               }
 
               // *********************** //
@@ -1750,11 +1488,15 @@ void activateTempOverride() {
     Serial.println("Temporary MIDI override ACTIVATED");
     Serial.println("All pot changes are temporary until ENTER is released");
 
-    // VISUAL FEEDBACK FOR ACTIVATING
-    if (!displayInverted) {
-      display.invertDisplay(true);
+    // Store the original display inversion state before toggling
+    originalDisplayInverted = displayInverted;
+
+    // VISUAL FEEDBACK FOR ACTIVATING - toggle the display inversion
+    // If display is normal, invert it; if it's inverted, make it normal
+    if (displayInverted == false) {
+      display.invertDisplay(!displayInverted);
     } else {
-      display.invertDisplay(false);
+      display.invertDisplay(displayInverted);
     }
 
     delay(100);  // DEBOUNCE
@@ -1803,11 +1545,11 @@ void deactivateTempOverride() {
     Serial.println("All MIDI values restored to original state");
     Serial.println("Catch-up mode activated for all pots");
 
-    // Restore to the saved display setting using the current displayInverted value
-    if (displayInverted) {
-      display.invertDisplay(true);
+    // Restore the original display inversion state
+    if (displayInverted == true) {
+      display.invertDisplay(!displayInverted);
     } else {
-      display.invertDisplay(false);
+      display.invertDisplay(displayInverted);
     }
 
     // Clear only the temporary override values, NOT catch-up values
@@ -1842,7 +1584,7 @@ void resetCatchUp(int potIndex) {
 void sendControlChange(byte cc, byte value, byte channel) {
   // Send to DIN MIDI (Serial1)
   MIDI.sendControlChange(cc, value, channel);
-  
+
   // Send to USB MIDI
   usbMIDI.sendControlChange(cc, value, channel);
 }
@@ -1914,6 +1656,55 @@ void removeMidiControl() {
 }
 
 // *********************** //
+// SAVE MIDI SETTINGS TO EEPROM
+// *********************** //
+void saveMidiSettingsToEEPROM() {
+  MidiSettings settings;
+  settings.signature = EEPROM_SIGNATURE;
+  settings.version = SETTINGS_VERSION;
+
+  for (int i = 0; i < N_POTS; i++) {
+    settings.messageCount[i] = messageCount[i];
+    for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
+      settings.potMessages[i][j].channel = potMessages[i][j].channel;
+      settings.potMessages[i][j].cc = potMessages[i][j].cc;
+      settings.potMessages[i][j].inverted = potMessages[i][j].inverted;
+      settings.potMessages[i][j].minValue = potMessages[i][j].minValue;
+      settings.potMessages[i][j].maxValue = potMessages[i][j].maxValue;
+      settings.potMessages[i][j].value = potMessages[i][j].value;
+    }
+  }
+
+  EEPROM.put(EEPROM_ADDR, settings);
+  Serial.println("MIDI settings saved to EEPROM");
+}
+
+// *********************** //
+// LOAD MIDI SETTINGS FROM EEPROM
+// *********************** //
+void loadMidiSettingsFromEEPROM() {
+  MidiSettings settings;
+  EEPROM.get(EEPROM_ADDR, settings);
+
+  if (settings.signature == EEPROM_SIGNATURE && settings.version == SETTINGS_VERSION) {
+    for (int i = 0; i < N_POTS; i++) {
+      messageCount[i] = settings.messageCount[i];
+      for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
+        potMessages[i][j].channel = settings.potMessages[i][j].channel;
+        potMessages[i][j].cc = settings.potMessages[i][j].cc;
+        potMessages[i][j].inverted = settings.potMessages[i][j].inverted;
+        potMessages[i][j].minValue = settings.potMessages[i][j].minValue;
+        potMessages[i][j].maxValue = settings.potMessages[i][j].maxValue;
+        potMessages[i][j].value = settings.potMessages[i][j].value;
+      }
+    }
+    Serial.println("MIDI settings loaded from EEPROM");
+  } else {
+    Serial.println("No valid MIDI settings found, using defaults");
+  }
+}
+
+// *********************** //
 // EEPROM FUNCTIONS
 // *********************** //
 // *********************** //
@@ -1924,15 +1715,14 @@ void factoryReset() {
 
   // Reset all pots to default configuration
   for (int i = 0; i < N_POTS; i++) {
-    messageCount[i] = 1;                            // 1 message per pot
-    potMessages[i][0].channel = i;                  // Channel 1-8 (0-7 in code)
-    potMessages[i][0].cc = 7;                       // CC 7
-    potMessages[i][0].inverted = false;             // Normal direction
-    potMessages[i][0].minValue = 0;                 // Min value 0
-    potMessages[i][0].maxValue = 127;               // Max value 127
-    potMessages[i][0].value = currentMidiValue[i];  // Current pot position
+    messageCount[i] = 1;
+    potMessages[i][0].channel = i;
+    potMessages[i][0].cc = 7;
+    potMessages[i][0].inverted = false;
+    potMessages[i][0].minValue = 0;
+    potMessages[i][0].maxValue = 127;
+    potMessages[i][0].value = currentMidiValue[i];
 
-    // Clear any additional messages
     for (int j = 1; j < MAX_MESSAGES_PER_POT; j++) {
       potMessages[i][j].channel = 0;
       potMessages[i][j].cc = 0;
@@ -1946,20 +1736,12 @@ void factoryReset() {
   // Reset display settings
   displayInverted = false;
 
-  // Reset current state slot
-  currentStateSlot = -1;
-
   // Reset edit pot selection
-  editPotSelection = 7;  // Default to pot 8
+  editPotSelection = 7;
 
-  // Save factory reset settings to EEPROM
-  saveGlobalSettingsToEEPROM();  // This saves displayInverted and editPotSelection
-  saveStateToSlot(0);            // Save to slot 0 (this will NOT call saveGlobalSettingsToEEPROM now)
-
-  // Clear all other state slots
-  for (int slot = 1; slot < NUM_STATE_SLOTS; slot++) {
-    clearStateFromSlot(slot);
-  }
+  // Save to EEPROM
+  saveMidiSettingsToEEPROM();
+  saveGlobalSettingsToEEPROM();
 
   // Reset navigation states
   selectedPot = 0;
@@ -1969,8 +1751,6 @@ void factoryReset() {
   assignEditingMode = false;
 
   Serial.println("Factory reset completed!");
-  Serial.println("All pots reset to: Channel 1-8, CC7, Range 0-127, Normal direction");
-  Serial.println("=== FACTORY RESET COMPLETE ===");
 
   // Visual feedback
   for (int i = 0; i < 3; i++) {
@@ -1989,18 +1769,10 @@ void saveGlobalSettingsToEEPROM() {
   settings.signature = EEPROM_SIGNATURE;
   settings.version = GLOBAL_SETTINGS_VERSION;
   settings.displayInverted = displayInverted;
-  settings.lastLoadedState = currentStateSlot;
-  settings.editPot = editPotSelection;  // Save the edit pot setting
+  settings.editPot = editPotSelection;
 
   EEPROM.put(GLOBAL_EEPROM_ADDR, settings);
-
   Serial.println("Global settings saved to EEPROM");
-  Serial.print("Display invert saved as: ");
-  Serial.println(displayInverted ? "YES" : "NO");
-  Serial.print("Last loaded state saved as: ");
-  Serial.println(currentStateSlot);
-  Serial.print("Edit pot saved as: Pot ");
-  Serial.println(editPotSelection + 1);
 }
 
 // *********************** //
@@ -2012,165 +1784,18 @@ void loadGlobalSettingsFromEEPROM() {
 
   if (settings.signature == EEPROM_SIGNATURE && settings.version == GLOBAL_SETTINGS_VERSION) {
     displayInverted = settings.displayInverted;
-    currentStateSlot = settings.lastLoadedState;
-    editPotSelection = settings.editPot;  // Load the edit pot setting
+    editPotSelection = settings.editPot;
 
-    // Validate editPotSelection range
     if (editPotSelection < 0 || editPotSelection >= N_POTS) {
-      editPotSelection = 7;  // Default to pot 8 if invalid
-    }
-
-    // Apply display setting
-    if (displayInverted) {
-      display.invertDisplay(true);
-    } else {
-      display.invertDisplay(false);
+      editPotSelection = 7;
     }
 
     Serial.println("Global settings loaded from EEPROM");
-    Serial.print("Display invert loaded as: ");
-    Serial.println(displayInverted ? "YES" : "NO");
-    Serial.print("Last loaded state loaded as: ");
-    Serial.println(currentStateSlot);
-    Serial.print("Edit pot loaded as: Pot ");
-    Serial.println(editPotSelection + 1);
   } else {
     Serial.println("No valid global settings found, using defaults");
     displayInverted = false;
-    currentStateSlot = -1;
-    editPotSelection = 7;  // Default to pot 8
+    editPotSelection = 7;
   }
-}
-
-// *********************** //
-// SAVE SETTINGS TO EEPROM (for current state)
-// *********************** //
-void saveSettingsToEEPROM() {
-  // Only save to the currently loaded state slot
-  if (currentStateSlot >= 0 && currentStateSlot < NUM_STATE_SLOTS) {
-    saveStateToSlot(currentStateSlot);
-    Serial.print("Settings saved to current state slot ");
-    Serial.println(currentStateSlot + 1);
-  } else {
-    // If no state is loaded, save to slot 0
-    Serial.println("No state loaded, saving to slot 0");
-    saveStateToSlot(0);
-    currentStateSlot = 0;
-    saveGlobalSettingsToEEPROM();
-  }
-}
-
-// *********************** //
-// LOAD SETTINGS FROM EEPROM (load MIDI config)
-// *********************** //
-void loadSettingsFromEEPROM() {
-  // Don't load global settings again - they're already loaded in initController
-  // Just try to load the last used state if one was saved
-  if (currentStateSlot >= 0 && currentStateSlot < NUM_STATE_SLOTS) {
-    loadStateFromSlot(currentStateSlot);
-  } else {
-    // Load default state (slot 0) if no last loaded state
-    loadStateFromSlot(0);
-  }
-}
-
-// *********************** //
-// SAVE STATE TO SLOT
-// *********************** //
-void saveStateToSlot(int slot) {
-  if (slot < 0 || slot >= NUM_STATE_SLOTS) return;
-
-  SavedSettings currentState;
-  currentState.signature = EEPROM_SIGNATURE;
-  currentState.version = SETTINGS_VERSION;
-
-  for (int i = 0; i < N_POTS; i++) {
-    currentState.messageCount[i] = messageCount[i];
-    for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
-      currentState.potMessages[i][j].channel = potMessages[i][j].channel;
-      currentState.potMessages[i][j].cc = potMessages[i][j].cc;
-      currentState.potMessages[i][j].inverted = potMessages[i][j].inverted;
-      currentState.potMessages[i][j].minValue = potMessages[i][j].minValue;
-      currentState.potMessages[i][j].maxValue = potMessages[i][j].maxValue;
-      currentState.potMessages[i][j].value = potMessages[i][j].value;
-    }
-  }
-
-  int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
-  EEPROM.put(slotAddress, currentState);
-
-  Serial.print("State saved to slot ");
-  Serial.println(slot + 1);
-}
-
-// *********************** //
-// LOAD STATE FROM SLOT
-// *********************** //
-void loadStateFromSlot(int slot) {
-  if (slot < 0 || slot >= NUM_STATE_SLOTS) return;
-
-  int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
-  SavedSettings loadedState;
-  EEPROM.get(slotAddress, loadedState);
-
-  if (loadedState.signature == EEPROM_SIGNATURE) {
-    for (int i = 0; i < N_POTS; i++) {
-      messageCount[i] = loadedState.messageCount[i];
-      for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
-        potMessages[i][j].channel = loadedState.potMessages[i][j].channel;
-        potMessages[i][j].cc = loadedState.potMessages[i][j].cc;
-        potMessages[i][j].inverted = loadedState.potMessages[i][j].inverted;
-        potMessages[i][j].minValue = loadedState.potMessages[i][j].minValue;
-        potMessages[i][j].maxValue = loadedState.potMessages[i][j].maxValue;
-        potMessages[i][j].value = loadedState.potMessages[i][j].value;
-      }
-    }
-
-    currentStateSlot = slot;
-
-    Serial.print("State loaded from slot ");
-    Serial.println(slot + 1);
-  } else {
-    Serial.print("No valid state found in slot ");
-    Serial.println(slot + 1);
-  }
-}
-
-// *********************** //
-// CLEAR STATE FROM SLOT
-// *********************** //
-void clearStateFromSlot(int slot) {
-  if (slot < 0 || slot >= NUM_STATE_SLOTS) return;
-
-  // Calculate EEPROM address for this slot
-  int slotAddress = EEPROM_ADDR + (slot * sizeof(SavedSettings));
-
-  // Create empty state with invalid signature
-  SavedSettings emptyState;
-  emptyState.signature = 0;  // Invalid signature
-  emptyState.version = SETTINGS_VERSION;
-
-  // Set default MIDI values
-  for (int i = 0; i < N_POTS; i++) {
-    emptyState.messageCount[i] = 1;  // Default to 1 message
-    for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
-      emptyState.potMessages[i][j].channel = 0;
-      emptyState.potMessages[i][j].cc = 0;
-      emptyState.potMessages[i][j].value = 0;
-    }
-  }
-
-  // Write to EEPROM
-  EEPROM.put(slotAddress, emptyState);
-
-  // If we cleared the currently loaded state, reset currentStateSlot and save global settings
-  if (currentStateSlot == slot) {
-    currentStateSlot = -1;
-    saveGlobalSettingsToEEPROM();  // Only save global settings when the current state slot changes
-  }
-
-  Serial.print("State cleared from slot ");
-  Serial.println(slot + 1);
 }
 
 // *********************** //
@@ -2190,7 +1815,7 @@ void initController() {
       ;
   }
 
-  // FIRST: Initialize display with default settings
+  // FIRST: Initialize display with default settings (normal orientation)
   display.clearDisplay();
   display.fillRect(0, 0, 128, 64, 1);          // WHITE BACKGROUND
   display.drawRoundRect(1, 1, 126, 62, 3, 0);  // OUTER BOX
@@ -2237,7 +1862,7 @@ void initController() {
 
   // THIRD: Load MIDI settings from EEPROM
   Serial.println("Loading MIDI settings...");
-  loadSettingsFromEEPROM();
+  loadMidiSettingsFromEEPROM();
 
   // DEBUG: Print loaded MIDI values for each pot
   Serial.println("=== LOADED MIDI VALUES ===");
@@ -2397,14 +2022,8 @@ void initController() {
   display.display();
   delay(500);
 
-  // Apply display inversion setting (already loaded from EEPROM)
-  if (displayInverted) {
-    display.invertDisplay(true);
-    Serial.println("Display inversion ENABLED");
-  } else {
-    display.invertDisplay(false);
-    Serial.println("Display inversion DISABLED");
-  }
+  // -- TRANSITION TO MAIN_SCREEN
+  drawMainScreen();
 
   Serial.println("=== BOOTUP COMPLETE ===");
 }
@@ -3008,12 +2627,10 @@ void drawMenuScreen() {
   display.setCursor(6, 11);
   display.println("Menu");
 
-  // MENU OPTIONS
+  // MENU OPTIONS - Only 2 items
   display.setCursor(5, 25);
   display.println("- CC assign");
   display.setCursor(5, 35);
-  display.println("- States");
-  display.setCursor(5, 45);
   display.println("- Settings");
 
   // Draw the bitmap indicator based on selection
@@ -3023,355 +2640,6 @@ void drawMenuScreen() {
   display.display();
 }
 
-// *********************** //
-// DRAW STATES MENU        //
-// *********************** //
-void drawStatesMenuScreen() {
-
-  display.clearDisplay();  // CLEAR
-
-  // Set colors based on the inversion variable
-  int bgColor = displayInverted ? 0 : 1;   // Black if inverted, White if normal
-  int txtColor = displayInverted ? 1 : 0;  // White if inverted, Black if normal
-
-  display.setFont(&Picopixel);
-
-  // DRAW UI
-  display.fillRect(0, 0, 128, 64, bgColor);
-  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
-
-  // Title
-  display.setTextColor(txtColor);
-  display.setCursor(6, 11);
-  display.println("States");
-
-  // Current State Indicator in top right
-  display.setCursor(67, 11);
-  display.print("Current State:");
-
-  // Display the current active state
-  display.setCursor(115, 11);
-  if (currentStateSlot >= 0 && currentStateSlot < 8) {
-    display.print("#");
-    display.print(currentStateSlot + 1);
-  } else {
-    display.print("--");  // Display -- if no state is loaded
-  }
-
-  // MENU OPTIONS
-  display.setCursor(5, 25);
-  display.println("- Save state");
-  display.setCursor(5, 35);
-  display.println("- Load state");
-  display.setCursor(5, 45);
-  display.println("- Clear state");
-
-  // Draw the bitmap indicator based on selection
-  int indicatorY = 21 + (selectedMenuItem * 10);
-  display.drawBitmap(55, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
-
-  display.display();
-}
-
-// *********************** //
-// DRAW SAVE STATES MENU   //
-// *********************** //
-void drawSaveStates() {
-
-  display.clearDisplay();  // CLEAR
-
-  // Set colors based on the inversion variable
-  int bgColor = displayInverted ? 0 : 1;   // Black if inverted, White if normal
-  int txtColor = displayInverted ? 1 : 0;  // White if inverted, Black if normal
-
-  display.setFont(&Picopixel);
-
-  // DRAW UI
-  display.fillRect(0, 0, 128, 64, bgColor);
-  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
-
-  display.setTextColor(txtColor);
-  display.setCursor(6, 11);
-  display.println("Save State");
-
-  // STATES OPTIONS - Two columns of 4
-  // Column 1 (States #1-4)
-  display.setCursor(5, 25);
-  display.println("- State #1");
-  display.setCursor(5, 35);
-  display.println("- State #2");
-  display.setCursor(5, 45);
-  display.println("- State #3");
-  display.setCursor(5, 55);
-  display.println("- State #4");
-
-  // Column 2 (States #5-8)
-  display.setCursor(69, 25);
-  display.println("- State #5");
-  display.setCursor(69, 35);
-  display.println("- State #6");
-  display.setCursor(69, 45);
-  display.println("- State #7");
-  display.setCursor(69, 55);
-  display.println("- State #8");
-
-  // Draw selection indicator (highlighted bar)
-  int row = selectedMenuItem % 4;  // 0-3 for rows
-  int col = selectedMenuItem / 4;  // 0 for first column, 1 for second column
-
-  int indicatorX = (col == 0) ? 3 : 67;
-  int indicatorY = 21 + (row * 10);
-  int indicatorWidth = 58;
-  int indicatorHeight = 9;
-
-  // Draw inverted selection bar (uses opposite colors for contrast)
-  display.fillRoundRect(indicatorX, indicatorY - 4, indicatorWidth, indicatorHeight, 1, txtColor);
-
-  // Redraw the selected text in background color on the bar
-  display.setTextColor(bgColor);
-  display.setCursor(indicatorX + 2, indicatorY + 2);
-  if (col == 0) {
-    display.print("State #");
-    display.print(row + 1);
-  } else {
-    display.print("State #");
-    display.print(row + 5);
-  }
-
-  // Reset text color for other elements (though we're done)
-  display.setTextColor(txtColor);
-
-  display.display();
-}
-
-// *********************** //
-// DRAW LOAD STATES MENU   //
-// *********************** //
-void drawLoadStates() {
-
-  display.clearDisplay();  // CLEAR
-
-  // Set colors based on the inversion variable
-  int bgColor = displayInverted ? 0 : 1;   // Black if inverted, White if normal
-  int txtColor = displayInverted ? 1 : 0;  // White if inverted, Black if normal
-
-  display.setFont(&Picopixel);
-
-  // DRAW UI
-  display.fillRect(0, 0, 128, 64, bgColor);
-  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
-
-  display.setTextColor(txtColor);
-  display.setCursor(6, 11);
-  display.println("Load State");
-
-  // STATES OPTIONS - Two columns of 4
-  // Column 1 (States #1-4)
-  display.setCursor(5, 25);
-  display.println("- State #1");
-  display.setCursor(5, 35);
-  display.println("- State #2");
-  display.setCursor(5, 45);
-  display.println("- State #3");
-  display.setCursor(5, 55);
-  display.println("- State #4");
-
-  // Column 2 (States #5-8)
-  display.setCursor(69, 25);
-  display.println("- State #5");
-  display.setCursor(69, 35);
-  display.println("- State #6");
-  display.setCursor(69, 45);
-  display.println("- State #7");
-  display.setCursor(69, 55);
-  display.println("- State #8");
-
-  // Draw selection indicator (highlighted bar)
-  int row = selectedMenuItem % 4;  // 0-3 for rows
-  int col = selectedMenuItem / 4;  // 0 for first column, 1 for second column
-
-  int indicatorX = (col == 0) ? 3 : 67;
-  int indicatorY = 21 + (row * 10);
-  int indicatorWidth = 58;
-  int indicatorHeight = 9;
-
-  // Draw inverted selection bar (uses opposite colors for contrast)
-  display.fillRoundRect(indicatorX, indicatorY - 4, indicatorWidth, indicatorHeight, 1, txtColor);
-
-  // Redraw the selected text in background color on the bar
-  display.setTextColor(bgColor);
-  display.setCursor(indicatorX + 2, indicatorY + 2);
-  if (col == 0) {
-    display.print("State #");
-    display.print(row + 1);
-  } else {
-    display.print("State #");
-    display.print(row + 5);
-  }
-
-  // Reset text color (though we're done drawing)
-  display.setTextColor(txtColor);
-
-  display.display();
-}
-
-// *********************** //
-// DRAW CLEAR STATES MENU   //
-// *********************** //
-void drawClearStates() {
-
-  display.clearDisplay();  // CLEAR
-
-  // Set colors based on the inversion variable
-  int bgColor = displayInverted ? 0 : 1;   // Black if inverted, White if normal
-  int txtColor = displayInverted ? 1 : 0;  // White if inverted, Black if normal
-
-  display.setFont(&Picopixel);
-
-  // DRAW UI
-  display.fillRect(0, 0, 128, 64, bgColor);
-  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
-
-  display.setTextColor(txtColor);
-  display.setCursor(6, 11);
-  display.println("Clear State");
-
-  // STATES OPTIONS - Two columns of 4
-  // Column 1 (States #1-4)
-  display.setCursor(5, 25);
-  display.println("- State #1");
-  display.setCursor(5, 35);
-  display.println("- State #2");
-  display.setCursor(5, 45);
-  display.println("- State #3");
-  display.setCursor(5, 55);
-  display.println("- State #4");
-
-  // Column 2 (States #5-8)
-  display.setCursor(69, 25);
-  display.println("- State #5");
-  display.setCursor(69, 35);
-  display.println("- State #6");
-  display.setCursor(69, 45);
-  display.println("- State #7");
-  display.setCursor(69, 55);
-  display.println("- State #8");
-
-  // Draw selection indicator (highlighted bar)
-  int row = selectedMenuItem % 4;  // 0-3 for rows
-  int col = selectedMenuItem / 4;  // 0 for first column, 1 for second column
-
-  int indicatorX = (col == 0) ? 3 : 67;
-  int indicatorY = 21 + (row * 10);
-  int indicatorWidth = 58;
-  int indicatorHeight = 9;
-
-  // Draw inverted selection bar (uses opposite colors for contrast)
-  display.fillRoundRect(indicatorX, indicatorY - 4, indicatorWidth, indicatorHeight, 1, txtColor);
-
-  // Redraw the selected text in background color on the bar
-  display.setTextColor(bgColor);
-  display.setCursor(indicatorX + 2, indicatorY + 2);
-  if (col == 0) {
-    display.print("State #");
-    display.print(row + 1);
-  } else {
-    display.print("State #");
-    display.print(row + 5);
-  }
-
-  // Reset text color (though we're done drawing)
-  display.setTextColor(txtColor);
-
-  display.display();
-}
-
-// *********************** //
-// DRAW CONFIRM SAVE POPUP //
-// *********************** //
-void drawConfirmSavePopup() {
-
-  display.clearDisplay();  // CLEAR
-
-  // Set colors based on the inversion variable
-  int bgColor = displayInverted ? 0 : 1;   // Black if inverted, White if normal
-  int txtColor = displayInverted ? 1 : 0;  // White if inverted, Black if normal
-  int boxColor = txtColor;
-
-  display.setFont(&Picopixel);
-
-  // Background
-  display.fillRect(0, 0, 128, 64, bgColor);
-
-  // Popup border
-  display.drawRoundRect(10, 12, 108, 40, 4, boxColor);
-
-  // Warning text
-  display.setTextColor(txtColor);
-  display.setTextSize(1);
-  display.setCursor(30, 22);
-  display.print("Overwrite State #");
-  display.print(pendingSaveSlot + 1);
-  display.print("?");
-
-  // Y/N with box around selected option
-  display.setCursor(45, 40);
-  display.print("Y");
-  display.setCursor(75, 40);
-  display.print("N");
-
-  // Determine box position and width based on selection
-  int boxX;
-  int boxWidth;
-  int boxY = 34;
-  int boxHeight = 9;
-
-  if (confirmSelection) {
-    boxX = 43;     // Box over Y
-    boxWidth = 7;  // Width 7 for Y
-  } else {
-    boxX = 73;     // Box over N
-    boxWidth = 8;  // Width 8 for N
-  }
-
-  // Draw the box around selected Y or N with flashing effect
-  if ((millis() / 300) % 2 == 0) {
-    // Draw filled box when flashing
-    display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
-    // Draw the selected letter in background color on the box
-    display.setTextColor(bgColor);
-    if (confirmSelection) {
-      display.setCursor(45, 40);
-      display.print("Y");
-      display.setTextColor(txtColor);
-      display.setCursor(75, 40);
-      display.print("N");
-    } else {
-      display.setCursor(75, 40);
-      display.print("N");
-      display.setTextColor(txtColor);
-      display.setCursor(45, 40);
-      display.print("Y");
-    }
-  } else {
-    // Draw outline box when not flashing
-    display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
-    // Draw both letters in text color
-    display.setTextColor(txtColor);
-    display.setCursor(45, 40);
-    display.print("Y");
-    display.setCursor(75, 40);
-    display.print("N");
-  }
-
-  // Instructions
-  display.setTextColor(txtColor);
-  display.setCursor(21, 60);
-  display.setTextSize(1);
-  display.print("ENT: Confirm  ASN: Cancel");
-
-  display.display();
-}
 // *********************** //
 // DRAW CONFIRM ASSIGN SAVE POPUP //
 // *********************** //
@@ -3391,9 +2659,6 @@ void drawConfirmAssignSavePopup() {
 
   // Popup border
   display.drawRoundRect(10, 12, 108, 40, 4, boxColor);
-
-  // Determine which slot we're saving to
-  int saveSlot = (currentStateSlot >= 0) ? currentStateSlot : 0;
 
   // Warning text
   display.setTextColor(txtColor);
