@@ -410,18 +410,31 @@ void loop() {
               Serial.print(potMovement);
 
               // Use a smaller threshold for more responsive catch-up
-              if (abs(potMovement) > 20) {  // Reduced from 50 to 20 for better responsiveness
+              if (abs(potMovement) > 20) {
                 // Calculate scaled MIDI value
                 int scaledMidiValue;
-
+                
                 if (potMovement > 0) {
                   // Moving forward from catch-up position
-                  // Scale from catch-up start value to 127 based on pot movement
-                  scaledMidiValue = map(potState[i], catchUpStartPotPos[i], 1023, catchUpStartValue[i], 127);
+                  // Calculate target value between startValue and 127
+                  int targetRange = 127 - catchUpStartValue[i];
+                  int totalMovement = 1023 - catchUpStartPotPos[i];
+                  if (totalMovement > 0) {
+                    scaledMidiValue = catchUpStartValue[i] + (targetRange * potMovement / totalMovement);
+                  } else {
+                    scaledMidiValue = 127;
+                  }
                 } else {
                   // Moving backward from catch-up position
-                  // Scale from catch-up start value to 0 based on pot movement
-                  scaledMidiValue = map(potState[i], catchUpStartPotPos[i], 0, catchUpStartValue[i], 0);
+                  // Calculate target value between startValue and 0
+                  int targetRange = catchUpStartValue[i];
+                  int totalMovement = catchUpStartPotPos[i];
+                  int movementProgress = -potMovement;
+                  if (totalMovement > 0) {
+                    scaledMidiValue = catchUpStartValue[i] - (targetRange * movementProgress / totalMovement);
+                  } else {
+                    scaledMidiValue = 0;
+                  }
                 }
 
                 // Clamp the value to 0-127 range
@@ -451,13 +464,19 @@ void loop() {
                 Serial.print(", finalValue=");
                 Serial.println(potMessages[i][0].value);
 
-                // If we've reached the end of the scaled range, disable catch-up
-                if (scaledMidiValue == 0 || scaledMidiValue == 127) {
+                // Check if we've reached the stored value to disable catch-up
+                int expectedMidiForPot = map(potState[i], 0, 1023, 0, 127);
+                int storedMidiValue = potMessages[i][0].value;
+                
+                // If pot position matches stored value within a reasonable range, disable catch-up
+                if (abs(expectedMidiForPot - storedMidiValue) < 10) {
                   catchUpActive[i] = false;
                   Serial.print("Catch-up COMPLETE for pot ");
                   Serial.print(i);
-                  Serial.print(" - Final value: ");
-                  Serial.println(potMessages[i][0].value);
+                  Serial.print(" - Pot aligned with stored value: ");
+                  Serial.print(expectedMidiForPot);
+                  Serial.print(" vs ");
+                  Serial.println(storedMidiValue);
                 }
               } else {
                 // Still within the catch-up dead zone - send the stored value with range/direction
@@ -528,7 +547,7 @@ void loop() {
       int storedMidiValue = potMessages[i][0].value;
 
       // If pot position matches stored value within a reasonable range
-      if (abs(expectedMidiForPot - storedMidiValue) < 5) {
+      if (abs(expectedMidiForPot - storedMidiValue) < 10) {
         catchUpActive[i] = false;
         Serial.print("Catch-up DISABLED for pot ");
         Serial.print(i);
