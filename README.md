@@ -8,8 +8,6 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 
 <img src="https://github.com/joebmz98/MC8P-Midi-Controller/raw/main/MC8P_MIDI_CONTROLLERS_MEDIA/PHOTOS/P1155438.JPG" alt="Photo of the assembled MC8P MIDI Controller" width="600"/>
 
-❌ **Pre-Assembled** | ❌ **DIY Kit** (excl. Teensy 4.0) | ✅ **PCB Only**
-
 ---
 
 ## **Features**
@@ -43,15 +41,13 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 ---
 
 ## **Available Purchase Options**
-1. **Pre-Assembled Unit** – Fully built & tested → *Not currently available*
-2. **Full DIY Kit** – All components + PCB, unassembled - No Teensy 4.0 Provided → *Not currently available*
-3. **PCB Only** – For custom builds → [**Purchase on eBay UK**](https://www.ebay.co.uk/itm/406664891089)
+1. **PCB Only** – For custom builds → [**Purchase from my Tindie store**](https://www.tindie.com/products/axsinstruments/diy-mc8p-standalone-midi-controller-pcbs-only/)
 
 ---
 
 ## **Installation & Setup**
 ### **1. Flashing the Firmware**
-- Install **Arduino IDE + Teensyduino** and other dependents
+- Install **Arduino IDE + Teensyduino** and other dependencies referenced in the Building from Source section
 - Clone this repo and open the `.ino` file in the Arduino IDE
 - Select **Teensy 4.0** in Arduino IDE
 - Upload the firmware
@@ -118,7 +114,7 @@ Each potentiometer can be assigned **10 different MIDI CCs** via the interface:
 
 ## **Support & Contributions**
 - **Issues:** Open a GitHub ticket
-- **Custom Requests:** Send me an E-mail! djaxiisuk@gmail.com
+- **Custom Requests:** Send me an E-mail! axs.instruments@gmail.com
 - **Want to improve it?** PRs welcome!
 
 ---
