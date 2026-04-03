@@ -31,11 +31,15 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 | B100K Vertical Potentiometer | 8  | Linear taper                   | [Example](https://shorturl.at/ZGaz2) |
 | 3.5mm Stereo Socket (PJ307) | 1  | MIDI TRS Type A                | [Example](https://shorturl.at/lp2T3) |
 | Kailh Switches             | 4   | For menu navigation            | —     |
+| Kailh Switch Caps          | 4   | For Kailh switches             | [AliExpress](https://www.aliexpress.com/item/1005006477890497.html) |
+| Potentiometer Knobs        | 8   | For B100K potentiometers       | [AliExpress](https://www.aliexpress.com/item/1005006064249289.html) |
+| DC-005 Barrel Jack Socket  | 1   | 5V DC power input              | [AliExpress](https://www.aliexpress.com/item/32839712664.html) |
 | 10nF Ceramic Capacitors    | 8   | Potentiometer filtering        | —     |
 | 10k Resistors              | 4   | Pull-down for buttons          | —     |
 | 220Ω Resistors             | 2   | For MIDI Circuitry             | —     |
 | 100nF Ceramic Capacitor    | 1   | Power rail stabilisation       | —     |
 | 10uF Ceramic Capacitor     | 1   | Power rail stabilisation       | —     |
+| 10uF Electrolytic Capacitor| 1   | 5V input stability             | —     |
 | 100uF Electrolytic Capacitor | 1 | Power rail stabilisation       | —     |
 
 ---
