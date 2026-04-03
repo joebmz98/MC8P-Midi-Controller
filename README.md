@@ -41,7 +41,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 ---
 
 ## **Available Purchase Options**
-1. **PCB Only** – For custom builds → [**Purchase from my Tindie store**](https://www.tindie.com/products/axsinstruments/diy-mc8p-standalone-midi-controller-pcbs-only/)
+**PCB Only** – For custom builds → [**Purchase from my Tindie store**](https://www.tindie.com/products/axsinstruments/diy-mc8p-standalone-midi-controller-pcbs-only/)
 
 ---
 
@@ -56,7 +56,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 - Refer to the *Build Guide*
 
 ### **3. First Boot**
-- Power via USB
+- Power via **USB** on the Teensy or via DC-005 input jack 
 - Use the **OLED menu** to assign CCs
 
 ---
@@ -91,7 +91,7 @@ Each potentiometer can be assigned **10 different MIDI CCs** via the interface:
 ---
 
 ## **MIDI Implementation**
-- **TRS MIDI Out** (3.5mm Type A)
+- USB MIDI **OR** TRS MIDI Out (3.5mm Type A)
 - Up to **10 CC Messages** per potentiometer - further expansion maybe soon!
 
 ---
