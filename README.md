@@ -67,28 +67,84 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 
 ## **Configuration**
 
-### **Performance Mode**
-- The default screen shows real-time MIDI CC values for each potentiometer
-- **Enter ASSIGN Mode** → Hold ASSIGN button for 2 seconds
+### Button Functions
 
-### **TEMP Mode**
-- **Activation**: While in PERFORMANCE Mode, press and hold the **ENTER** button
-- **Function**: While holding ENTER, freely adjust any potentiometer to send temporary MIDI values
-- **Release**: When you release ENTER, all pot values instantly return to their positions before pressing ENTER
-- **Use Case**: Perfect for creating temporary effects, build-ups, or transitions without losing your original settings
-- **Note**: Physical knobs will "catch up" to their original positions after ENTER is released
+| Button | Primary Function |
+|--------|-----------------|
+| ASSIGN | Navigate backward, cancel actions, return to previous screens |
+| ENTER | Confirm selections, activate temporary override mode |
+| PREV | Move up or decrease values |
+| NEXT | Move down or increase values |
 
-### **ASSIGN Mode**
-Each potentiometer can be assigned **10 different MIDI CCs** via the interface:
-1. **Select Pot** → Hold ASSIGN + press NEXT/PREV to jump between potentiometers
-2. **Toggle Parameter** → Press ASSIGN to toggle between editing MIDI Channel or CC Number
-3. **Edit value of MIDI Channel/CC Number** → Press NEXT/PREV to increment/decrement the selected value
-4. **ADD new CC to Potentiometer** → Hold ENTER + NEXT (2 sec) to create a blank CC (default: Ch 1, CC1). Limit: 10 CCs per pot
-5. **Switch between CC Messages** → Hold ENTER + press NEXT/PREV to cycle through CCs on the current pot
-6. **DELETE CC from Potentiometer** → Hold ENTER + PREV (2 sec) to remove the selected CC
-7. **Save & Exit** → Hold ASSIGN + ENTER (2 sec) to save to EEPROM and return to PERFORMANCE Mode
+### Screen Hierarchy
 
-**Parameter Reset** → Hold NEXT + PREV (5 sec) to restore defaults (*Ch 1–8, CC7 [OP-XY Track Volume]*). This does not save the parameter reset to the EEPROM.
+The interface is organized into several screens accessible from the main display:
+
+**MAIN SCREEN** → **MENU** → **SETTINGS** → various configuration screens
+
+### PERFORMANCE Mode - Main Screen
+
+This is your default operating view. The screen displays eight circular indicators, one for each potentiometer, showing current MIDI values (0-127). Each circle fills proportionally to the value being sent.
+
+From the main screen:
+- Press **ASSIGN** to open the menu
+- Press and hold **ENTER** to activate temporary override mode (the display inverts as visual feedback)
+
+### TEMP Mode
+
+When you press and hold ENTER on the main screen, the controller enters temporary override mode. In this mode, all potentiometer adjustments are temporary. When you release ENTER, the controller returns to the stored values and activates catch up mode, where potentiometers must pass through their stored positions before taking control again.
+
+### Menu Screen
+
+Press ASSIGN from the main screen to reach the menu. Use PREV and NEXT to scroll through options:
+
+- **CC assign** – Configure MIDI messages for each potentiometer
+- **Settings** – Access device configuration
+
+Press ENTER to select an option, or press ASSIGN to return to the main screen.
+
+### Assign Screen - CC Assign 
+
+This screen lets you configure up to 10 MIDI messages per potentiometer.
+
+**Navigation flow:**
+1. Select which potentiometer to edit (flashing number)
+2. Select which message slot to edit, or choose Add/Remove
+3. Edit individual parameters
+
+**Parameters you can edit for each message:**
+- **Channel** – MIDI channel (1-16) or OMNI
+- **CC** – Control Change number (0-127)
+- **Min Value** – Minimum output value (0-127)
+- **Max Value** – Maximum output value (0-127)
+- **Direction** – Normal (0-127) or Inverted (127-0)
+
+**Editing values:** When editing a parameter, use potentiometer 8 to smoothly adjust the value across its full range. The selected parameter flashes to indicate edit mode.
+
+**Navigation within Assign Screen:**
+- **PREV/NEXT** – Navigate between pots, messages, or Add/Remove buttons
+- **ENTER** – Enter edit mode for a parameter, or cycle to the next parameter
+- **ASSIGN** – Return to pot selection, or save and exit (confirmation popup appears)
+
+**Add/Remove messages:**
+- Navigate to "+ Add" to create a new message (up to 10 per pot)
+- Navigate to "- Remove" to delete the selected message (minimum 1 message per pot)
+
+### Settings Screen
+
+From the menu, select Settings to access:
+
+**Assign Settings** – Choose which potentiometer (1-8) to use for editing values in the Assign screen. Use PREV/NEXT to change the selection.
+
+**Display Settings** – Toggle the display inversion between normal and inverted. Press ENTER to enter edit mode, then use PREV or NEXT to toggle between Yes and No. Press ENTER again to save, or ASSIGN to cancel.
+
+**About** – View firmware version and device information.
+
+**Factory Reset** – Restore all settings to default values. A confirmation screen prevents accidental resets.
+
+### Confirmation Popups
+
+When saving changes or performing a factory reset, a popup screen appears asking for confirmation. Use PREV/NEXT to toggle between Y (Yes) and N (No), then press ENTER to confirm or ASSIGN to cancel.
 
 **Owner's Manual:** https://docs.google.com/document/d/1LK1hT5nvRXzgEnc-npS-HN6GpmSG35B1l2-KNDyIfV0/edit?usp=sharing
 
@@ -120,5 +176,3 @@ Each potentiometer can be assigned **10 different MIDI CCs** via the interface:
 - **Issues:** Open a GitHub ticket
 - **Custom Requests:** Send me an E-mail! axs.instruments@gmail.com
 - **Want to improve it?** PRs welcome!
-
----
