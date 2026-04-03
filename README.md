@@ -82,7 +82,7 @@ The interface is organized into several screens accessible from the main display
 
 **MAIN SCREEN** → **MENU** → **SETTINGS** → various configuration screens
 
-### PERFORMANCE Mode - Main Screen
+### Main Screen
 
 This is your default operating view. The screen displays eight circular indicators, one for each potentiometer, showing current MIDI values (0-127). Each circle fills proportionally to the value being sent.
 
@@ -90,7 +90,7 @@ From the main screen:
 - Press **ASSIGN** to open the menu
 - Press and hold **ENTER** to activate temporary override mode (the display inverts as visual feedback)
 
-### TEMP Mode
+### Temporary Override Mode
 
 When you press and hold ENTER on the main screen, the controller enters temporary override mode. In this mode, all potentiometer adjustments are temporary. When you release ENTER, the controller returns to the stored values and activates catch up mode, where potentiometers must pass through their stored positions before taking control again.
 
@@ -103,7 +103,7 @@ Press ASSIGN from the main screen to reach the menu. Use PREV and NEXT to scroll
 
 Press ENTER to select an option, or press ASSIGN to return to the main screen.
 
-### Assign Screen - CC Assign 
+### Assign Screen (CC Assign)
 
 This screen lets you configure up to 10 MIDI messages per potentiometer.
 
@@ -146,8 +146,6 @@ From the menu, select Settings to access:
 
 When saving changes or performing a factory reset, a popup screen appears asking for confirmation. Use PREV/NEXT to toggle between Y (Yes) and N (No), then press ENTER to confirm or ASSIGN to cancel.
 
-**Owner's Manual:** https://docs.google.com/document/d/1LK1hT5nvRXzgEnc-npS-HN6GpmSG35B1l2-KNDyIfV0/edit?usp=sharing
-
 ---
 
 ## **MIDI Implementation**
@@ -164,6 +162,8 @@ When saving changes or performing a factory reset, a popup screen appears asking
   - `MIDI` (MIDI)
   - `ResponsiveAnalogRead` (Potentiometer Smoothing)
   - `Picopixel` (Picopixel Font)
+
+**Owner's Manual:** https://docs.google.com/document/d/1LK1hT5nvRXzgEnc-npS-HN6GpmSG35B1l2-KNDyIfV0/edit?usp=sharing
 
 ---
 
