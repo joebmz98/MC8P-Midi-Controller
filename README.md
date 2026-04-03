@@ -174,5 +174,6 @@ When saving changes or performing a factory reset, a popup screen appears asking
 
 ## **Support & Contributions**
 - **Issues:** Open a GitHub ticket
-- **Custom Requests:** Send me an E-mail! axs.instruments@gmail.com
+- **Custom Requests:** Start a thread in the discussions page or send me an E-mail! axs.instruments@gmail.com
 - **Want to improve it?** PRs welcome!
+- **Special Thanks:** This project is supported by **PCBWay** who have kindly provided the PCB stock available at the moment
