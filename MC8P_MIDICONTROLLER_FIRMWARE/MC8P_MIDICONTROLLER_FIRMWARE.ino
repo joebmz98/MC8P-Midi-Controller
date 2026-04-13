@@ -63,7 +63,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);  //
 
 // -- FIRMWARE VERSION --
-const char* FIRMWARE_VERSION = "2.0";
+const char* FIRMWARE_VERSION = "2.1";
 
 // STRUCTURE TO HOLD MULTIPLE MIDI MESSAGES PER POT
 struct MidiMessageParams {
@@ -234,9 +234,9 @@ int editingSceneMode = false;               // Flag for editing scene mode
 int originalSceneMode = STEP_MODE;          // Store original mode when editing
 
 // Custom scene order (max 16 scenes)
-const int MAX_CUSTOM_SCENES = 16;
-int customSceneOrder[MAX_CUSTOM_SCENES] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};  // Default sequential
-int customSceneLength = 16;                 // Number of scenes in custom order (1-16)
+const int MAX_CUSTOM_SCENES = 12;
+int customSceneOrder[MAX_CUSTOM_SCENES] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};  // Default sequence
+int customSceneLength = 12;                 // Number of scenes in custom order (1-16)
 int editingCustomScene = false;             // Flag for editing custom scenes
 int editingCustomSceneIndex = 0;            // Which scene in custom order is being edited
 int customSceneEditPosition = 0;            // Position in custom order being edited
@@ -903,9 +903,12 @@ void readButtons() {
                     saveGlobalSettingsToEEPROM();
                     Serial.print("Custom scene length saved as: ");
                     Serial.println(customSceneLength);
-                    // Ensure currentSceneValue is within new bounds
+                    // Ensure currentSceneValue and edit position are within new bounds
                     if (currentSceneValue >= customSceneLength) {
                       currentSceneValue = customSceneLength - 1;
+                    }
+                    if (customSceneEditPosition >= customSceneLength) {
+                      customSceneEditPosition = customSceneLength - 1;
                     }
                   } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
                     saveGlobalSettingsToEEPROM();
@@ -927,8 +930,17 @@ void readButtons() {
                       break;
                     case 2:  // Custom settings (only if in CUSTOM mode)
                       if (sceneMode == CUSTOM_MODE) {
-                        sceneEditMode = SCENE_EDIT_CUSTOM_LENGTH;
-                        Serial.println("Custom Length - EDIT MODE ACTIVATED");
+                        // Toggle between length and value editing
+                        if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
+                          sceneEditMode = SCENE_EDIT_CUSTOM_LENGTH;
+                          Serial.println("Custom Length - EDIT MODE ACTIVATED");
+                        } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
+                          sceneEditMode = SCENE_EDIT_CUSTOM_VALUE;
+                          Serial.println("Custom Value - EDIT MODE ACTIVATED");
+                        } else {
+                          sceneEditMode = SCENE_EDIT_CUSTOM_LENGTH;
+                          Serial.println("Custom Length - EDIT MODE ACTIVATED");
+                        }
                       }
                       break;
                   }
@@ -1133,13 +1145,11 @@ void readButtons() {
                     drawSceneScreen();
                   }
                 } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
-                  // Decrease the scene value at current position
-                  if (customSceneOrder[customSceneEditPosition] > 0) {
-                    customSceneOrder[customSceneEditPosition]--;
-                    Serial.print("Custom scene at position ");
-                    Serial.print(customSceneEditPosition + 1);
-                    Serial.print(" set to: ");
-                    Serial.println(customSceneOrder[customSceneEditPosition] + 1);
+                  // Navigate to previous position in custom scene order
+                  if (customSceneEditPosition > 0) {
+                    customSceneEditPosition--;
+                    Serial.print("Editing custom scene position: ");
+                    Serial.println(customSceneEditPosition + 1);
                     drawSceneScreen();
                   }
                 }
@@ -1417,7 +1427,7 @@ void readButtons() {
                   sceneSelectedParameter = 0;
                   drawSceneScreen();
                 } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
-                  // Increase custom scene length
+                  // Increase custom scene length (max 12)
                   if (customSceneLength < MAX_CUSTOM_SCENES) {
                     customSceneLength++;
                     Serial.print("Custom scene length increased to: ");
@@ -1425,13 +1435,11 @@ void readButtons() {
                     drawSceneScreen();
                   }
                 } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
-                  // Increase the scene value at current position
-                  if (customSceneOrder[customSceneEditPosition] < 98) {
-                    customSceneOrder[customSceneEditPosition]++;
-                    Serial.print("Custom scene at position ");
-                    Serial.print(customSceneEditPosition + 1);
-                    Serial.print(" set to: ");
-                    Serial.println(customSceneOrder[customSceneEditPosition] + 1);
+                  // Navigate to next position in custom scene order
+                  if (customSceneEditPosition < customSceneLength - 1) {
+                    customSceneEditPosition++;
+                    Serial.print("Editing custom scene position: ");
+                    Serial.println(customSceneEditPosition + 1);
                     drawSceneScreen();
                   }
                 }
@@ -3226,7 +3234,7 @@ void drawSceneScreen() {
   
   // Custom scene settings (only show in CUSTOM mode)
   if (sceneMode == CUSTOM_MODE) {
-    // Custom scene length
+    // Custom scene length (max 12)
     display.setCursor(5, 45);
     display.print("- Length: ");
     
@@ -3251,39 +3259,43 @@ void drawSceneScreen() {
       display.print(customSceneLength);
     }
     
-    // Display current custom scene order (scrollable)
-    display.setCursor(5, 55);
-    display.print("- Order: ");
+    // Display custom scene order horizontally
+    int startX = 5;
+    int startY = 55;
+    int spacing = 9;  // 9 pixels between each scene value
     
-    // Show current scene being edited
-    if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
-      display.setCursor(55, 55);
-      if ((millis() / 300) % 2 == 0) {
-        display.fillRect(54, 48, 35, 9, txtColor);
-        display.setTextColor(bgColor);
-        display.print("[");
-        display.print(customSceneEditPosition + 1);
-        display.print(":");
-        if (customSceneOrder[customSceneEditPosition] + 1 < 10) display.print("0");
-        display.print(customSceneOrder[customSceneEditPosition] + 1);
-        display.print("]");
-        display.setTextColor(txtColor);
+    // Draw the scene sequence values horizontally
+    for (int i = 0; i < customSceneLength; i++) {
+      int xPos = startX + (i * spacing);
+      
+      // Format the scene value (add leading zero for single digits)
+      String sceneValue;
+      if (customSceneOrder[i] + 1 < 10) {
+        sceneValue = "0" + String(customSceneOrder[i] + 1);
       } else {
-        display.print("[");
-        display.print(customSceneEditPosition + 1);
-        display.print(":");
-        if (customSceneOrder[customSceneEditPosition] + 1 < 10) display.print("0");
-        display.print(customSceneOrder[customSceneEditPosition] + 1);
-        display.print("]");
+        sceneValue = String(customSceneOrder[i] + 1);
       }
-    } else {
-      display.setCursor(55, 55);
-      display.print("[");
-      display.print(customSceneEditPosition + 1);
-      display.print(":");
-      if (customSceneOrder[customSceneEditPosition] + 1 < 10) display.print("0");
-      display.print(customSceneOrder[customSceneEditPosition] + 1);
-      display.print("]");
+      
+      // If this position is being edited, highlight it
+      if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE && customSceneEditPosition == i) {
+        if ((millis() / 300) % 2 == 0) {
+          // Draw filled background for the selected scene value
+          display.fillRect(xPos - 1, startY - 1, 14, 9, txtColor);
+          display.setTextColor(bgColor);
+          display.setCursor(xPos, startY);
+          display.print(sceneValue);
+          display.setTextColor(txtColor);
+        } else {
+          // Draw outline box for the selected scene value
+          display.drawRect(xPos - 1, startY - 1, 14, 9, txtColor);
+          display.setCursor(xPos, startY);
+          display.print(sceneValue);
+        }
+      } else {
+        // Normal display
+        display.setCursor(xPos, startY);
+        display.print(sceneValue);
+      }
     }
   }
   
