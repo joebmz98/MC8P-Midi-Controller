@@ -3901,7 +3901,7 @@ void drawAboutScreen() {
   display.print("8 pot open-source");
 
   display.setCursor(41, 25);
-  display.print("firmware v2.0");
+  display.print("firmware v2.1");
 
   display.setCursor(34, 57);
   display.print(".axs instruments");
