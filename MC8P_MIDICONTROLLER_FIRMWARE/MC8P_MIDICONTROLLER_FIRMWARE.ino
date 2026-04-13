@@ -65,41 +65,71 @@ MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);  //
 // -- FIRMWARE VERSION --
 const char* FIRMWARE_VERSION = "2.1";
 
+// CC MESSAGE DIRECTION/CURVE
+enum CurveType {
+  CURVE_NOR = 0,  // Normal linear (0-127)
+  CURVE_INV = 1,  // Inverted linear (127-0)
+  CURVE_LOG = 2,  // Logarithmic (slow start, fast end)
+  CURVE_ILG = 3   // Inverse Logarithmic (fast start, slow end)
+};
+
 // STRUCTURE TO HOLD MULTIPLE MIDI MESSAGES PER POT
 struct MidiMessageParams {
   byte channel;
   byte cc;
-  bool inverted;  // true = inverted (127->0), false = normal (0->127)
+  CurveType curve; // 0 = NOR // 1 = INV // 2 = LOG // 3 = ILG
   byte minValue;  // Minimum value for CC range (0-127)
   byte maxValue;  // Maximum value for CC range (0-127)
   int value;      // Current stored value
 };
 
 // Helper function to map potentiometer value with range and direction
-int mapMidiValueWithParams(int rawValue, byte minVal, byte maxVal, bool inverted) {
-  // Convert raw potentiometer value (0-1023) to the specified range
+int mapMidiValueWithParams(int rawValue, byte minVal, byte maxVal, CurveType curve) {
+  // First, normalize the raw value to 0.0-1.0 range
+  float normalized = (float)rawValue / 1023.0;
+  
+  // Apply curve transformation
+  float transformed;
+  
+  switch (curve) {
+    case CURVE_LOG:  // Logarithmic (slow start, fast end)
+      // Square the value for logarithmic feel (x^2)
+      // This gives fine control at low values and faster changes at high values
+      transformed = normalized * normalized;
+      break;
+      
+    case CURVE_ILG:  // Inverse Logarithmic (fast start, slow end) 
+      // Actually this should be: fast changes at low values, fine control at high values
+      // Formula: 1 - (1-x)² gives fast start, slow end
+      // But you want: slow descent that accelerates (fine at high, fast at low)
+      // So we use: 1 - x² (inverse of LOG)
+      transformed = 1.0 - (normalized * normalized);
+      break;
+      
+    case CURVE_INV:  // Inverted linear
+      transformed = 1.0 - normalized;
+      break;
+      
+    case CURVE_NOR:  // Normal linear
+      // Fall through to default
+    default:
+      transformed = normalized;
+      break;
+  }
+  
+  // Map the transformed value (0.0-1.0) to the min-max range
   int mappedValue;
-
-  // Handle the range (allow min > max for inverse mapping)
   if (minVal <= maxVal) {
     // Normal range
-    mappedValue = map(rawValue, 0, 1023, minVal, maxVal);
+    mappedValue = minVal + (transformed * (maxVal - minVal));
   } else {
     // Inverted range (min > max)
-    mappedValue = map(rawValue, 0, 1023, maxVal, minVal);
+    mappedValue = maxVal + ((1.0 - transformed) * (minVal - maxVal));
   }
-
-  // Constrain to the valid range
+  
+  // Constrain to valid range
   mappedValue = constrain(mappedValue, min(minVal, maxVal), max(minVal, maxVal));
-
-  // Apply direction inversion if needed
-  if (inverted) {
-    // Invert the value within the range
-    int rangeMin = min(minVal, maxVal);
-    int rangeMax = max(minVal, maxVal);
-    mappedValue = rangeMin + (rangeMax - mappedValue);
-  }
-
+  
   return mappedValue;
 }
 
@@ -266,7 +296,7 @@ struct MidiSettings {
   struct SavedMidiMessage {
     byte channel;
     byte cc;
-    bool inverted;
+    CurveType curve;
     byte minValue;
     byte maxValue;
     int value;
@@ -286,7 +316,7 @@ struct GlobalSettings {
 };
 
 // -- EEPROM VERSION
-#define SETTINGS_VERSION 2
+#define SETTINGS_VERSION 4
 #define GLOBAL_SETTINGS_VERSION 3
 
 // EEPROM address for global settings
@@ -426,7 +456,7 @@ void loop() {
               int finalValue = mapMidiValueWithParams(tempMidiValues[i],
                                                       potMessages[i][j].minValue,
                                                       potMessages[i][j].maxValue,
-                                                      potMessages[i][j].inverted);
+                                                      potMessages[i][j].curve);
               // Check for OMNI channel
               if (potMessages[i][j].channel == 16) {  // OMNI
                 for (byte ch = 0; ch < 16; ch++) {
@@ -491,7 +521,7 @@ void loop() {
                   int finalValue = mapMidiValueWithParams(scaledMidiValue,
                                                           potMessages[i][j].minValue,
                                                           potMessages[i][j].maxValue,
-                                                          potMessages[i][j].inverted);
+                                                          potMessages[i][j].curve);
                   potMessages[i][j].value = finalValue;
 
                   // Check for OMNI channel
@@ -530,7 +560,7 @@ void loop() {
                   int finalValue = mapMidiValueWithParams(potMessages[i][j].value,
                                                           potMessages[i][j].minValue,
                                                           potMessages[i][j].maxValue,
-                                                          potMessages[i][j].inverted);
+                                                          potMessages[i][j].curve);
 
                   // Check for OMNI channel
                   if (potMessages[i][j].channel == 16) {  // OMNI
@@ -550,7 +580,7 @@ void loop() {
                 int finalValue = mapMidiValueWithParams(potState[i],  // Pass potState (0-1023) instead of currentMidiValue
                                                         potMessages[i][j].minValue,
                                                         potMessages[i][j].maxValue,
-                                                        potMessages[i][j].inverted);
+                                                        potMessages[i][j].curve);
                 potMessages[i][j].value = finalValue;
 
                 // Check for OMNI channel
@@ -1368,10 +1398,25 @@ void readButtons() {
                       Serial.println(potMessages[selectedPot][selectedMessage].cc);
                       break;
                     case ASSIGN_EDIT_INVERT:
-                      potMessages[selectedPot][selectedMessage].inverted =
-                        !potMessages[selectedPot][selectedMessage].inverted;
-                      Serial.print("Direction set to: ");
-                      Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "Inverted" : "Normal");
+                      // Cycle backwards through curve types: NOR -> ILG -> LOG -> INV -> NOR
+                      switch (potMessages[selectedPot][selectedMessage].curve) {
+                        case CURVE_NOR:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_ILG;
+                          Serial.println("Curve set to: ILG");
+                          break;
+                        case CURVE_INV:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_NOR;
+                          Serial.println("Curve set to: NOR");
+                          break;
+                        case CURVE_LOG:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_INV;
+                          Serial.println("Curve set to: INV");
+                          break;
+                        case CURVE_ILG:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_LOG;
+                          Serial.println("Curve set to: LOG");
+                          break;
+                      }
                       break;
                     case ASSIGN_EDIT_MIN:
                       if (potMessages[selectedPot][selectedMessage].minValue > 0) {
@@ -1689,10 +1734,25 @@ void readButtons() {
                       Serial.println(potMessages[selectedPot][selectedMessage].cc);
                       break;
                     case ASSIGN_EDIT_INVERT:
-                      potMessages[selectedPot][selectedMessage].inverted =
-                        !potMessages[selectedPot][selectedMessage].inverted;
-                      Serial.print("Direction set to: ");
-                      Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "Inverted" : "Normal");
+                      // Cycle forward through curve types: NOR -> INV -> LOG -> ILG -> NOR
+                      switch (potMessages[selectedPot][selectedMessage].curve) {
+                        case CURVE_NOR:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_INV;
+                          Serial.println("Curve set to: INV");
+                          break;
+                        case CURVE_INV:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_LOG;
+                          Serial.println("Curve set to: LOG");
+                          break;
+                        case CURVE_LOG:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_ILG;
+                          Serial.println("Curve set to: ILG");
+                          break;
+                        case CURVE_ILG:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_NOR;
+                          Serial.println("Curve set to: NOR");
+                          break;
+                      }
                       break;
                     case ASSIGN_EDIT_MIN:
                       if (potMessages[selectedPot][selectedMessage].minValue < 127) {
@@ -1992,7 +2052,7 @@ void addMidiControl() {
   if (messageCount[selectedPot] < MAX_MESSAGES_PER_POT) {
     potMessages[selectedPot][messageCount[selectedPot]].channel = 0;
     potMessages[selectedPot][messageCount[selectedPot]].cc = 1;
-    potMessages[selectedPot][messageCount[selectedPot]].inverted = false;
+    potMessages[selectedPot][messageCount[selectedPot]].curve = CURVE_NOR;
     potMessages[selectedPot][messageCount[selectedPot]].minValue = 0;
     potMessages[selectedPot][messageCount[selectedPot]].maxValue = 127;
     potMessages[selectedPot][messageCount[selectedPot]].value = potState[selectedPot];
@@ -2099,7 +2159,7 @@ void saveMidiSettingsToEEPROM() {
     for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
       settings.potMessages[i][j].channel = potMessages[i][j].channel;
       settings.potMessages[i][j].cc = potMessages[i][j].cc;
-      settings.potMessages[i][j].inverted = potMessages[i][j].inverted;
+      settings.potMessages[i][j].curve = potMessages[i][j].curve;  // Changed from inverted
       settings.potMessages[i][j].minValue = potMessages[i][j].minValue;
       settings.potMessages[i][j].maxValue = potMessages[i][j].maxValue;
       settings.potMessages[i][j].value = potMessages[i][j].value;
@@ -2156,6 +2216,13 @@ void loadMidiSettingsFromEEPROM() {
           potMessages[i][j].cc = (j == 0) ? 7 : 1;  // Default for first message: CC7, others: CC1
         }
 
+        // Load curve type (validate range 0-3)
+        if (settings.potMessages[i][j].curve >= 0 && settings.potMessages[i][j].curve <= 3) {
+          potMessages[i][j].curve = settings.potMessages[i][j].curve;
+        } else {
+          potMessages[i][j].curve = CURVE_NOR;  // Default to NOR
+        }
+
         // Validate min/max range
         if (settings.potMessages[i][j].minValue >= 0 && settings.potMessages[i][j].minValue <= 127) {
           potMessages[i][j].minValue = settings.potMessages[i][j].minValue;
@@ -2174,7 +2241,6 @@ void loadMidiSettingsFromEEPROM() {
           potMessages[i][j].maxValue = potMessages[i][j].minValue;
         }
 
-        potMessages[i][j].inverted = settings.potMessages[i][j].inverted;
         potMessages[i][j].value = settings.potMessages[i][j].value;
       }
     }
@@ -2186,7 +2252,7 @@ void loadMidiSettingsFromEEPROM() {
       messageCount[i] = 1;
       potMessages[i][0].channel = i;
       potMessages[i][0].cc = 7;
-      potMessages[i][0].inverted = false;
+      potMessages[i][0].curve = CURVE_NOR;
       potMessages[i][0].minValue = 0;
       potMessages[i][0].maxValue = 127;
       potMessages[i][0].value = 0;
@@ -2194,7 +2260,7 @@ void loadMidiSettingsFromEEPROM() {
       for (int j = 1; j < MAX_MESSAGES_PER_POT; j++) {
         potMessages[i][j].channel = 0;
         potMessages[i][j].cc = 0;
-        potMessages[i][j].inverted = false;
+        potMessages[i][j].curve = CURVE_NOR;
         potMessages[i][j].minValue = 0;
         potMessages[i][j].maxValue = 127;
         potMessages[i][j].value = 0;
@@ -2217,7 +2283,7 @@ void factoryReset() {
     messageCount[i] = 1;
     potMessages[i][0].channel = i;                  // Channel 1-8 (0-7 in code)
     potMessages[i][0].cc = 7;                       // CC 7
-    potMessages[i][0].inverted = false;             // Normal direction
+    potMessages[i][0].curve = CURVE_NOR;                    // Normal direction
     potMessages[i][0].minValue = 0;                 // Min value 0
     potMessages[i][0].maxValue = 127;               // Max value 127
     potMessages[i][0].value = currentMidiValue[i];  // Current pot position
@@ -2226,7 +2292,7 @@ void factoryReset() {
     for (int j = 1; j < MAX_MESSAGES_PER_POT; j++) {
       potMessages[i][j].channel = 0;
       potMessages[i][j].cc = 0;
-      potMessages[i][j].inverted = false;
+      potMessages[i][j].curve = CURVE_NOR;
       potMessages[i][j].minValue = 0;
       potMessages[i][j].maxValue = 127;
       potMessages[i][j].value = 0;
@@ -2461,8 +2527,13 @@ void initController() {
       }
       Serial.print(", cc=");
       Serial.print(potMessages[i][0].cc);
-      Serial.print(", inverted=");
-      Serial.print(potMessages[i][0].inverted ? "YES" : "NO");
+      Serial.print(", curve=");
+      switch (potMessages[i][0].curve) {
+        case CURVE_NOR: Serial.print("NOR"); break;
+        case CURVE_INV: Serial.print("INV"); break;
+        case CURVE_LOG: Serial.print("LOG"); break;
+        case CURVE_ILG: Serial.print("ILG"); break;
+      }
       Serial.print(", min=");
       Serial.print(potMessages[i][0].minValue);
       Serial.print(", max=");
@@ -2495,7 +2566,7 @@ void initController() {
       messageCount[i] = 1;
       potMessages[i][0].channel = potChannels[i];
       potMessages[i][0].cc = potCCs[i];
-      potMessages[i][0].inverted = false;
+      potMessages[i][0].curve = CURVE_NOR;
       potMessages[i][0].minValue = 0;
       potMessages[i][0].maxValue = 127;
       potMessages[i][0].value = 0;
@@ -2531,7 +2602,7 @@ void initController() {
       int finalValue = mapMidiValueWithParams(currentMidiValue[i],
                                               potMessages[i][0].minValue,
                                               potMessages[i][0].maxValue,
-                                              potMessages[i][0].inverted);
+                                              potMessages[i][0].curve);
       potMessages[i][0].value = finalValue;
       Serial.print(" (stored value set to ");
       Serial.print(finalValue);
@@ -2553,7 +2624,7 @@ void initController() {
       int finalValue = mapMidiValueWithParams(potMessages[i][j].value,
                                               potMessages[i][j].minValue,
                                               potMessages[i][j].maxValue,
-                                              potMessages[i][j].inverted);
+                                              potMessages[i][j].curve);
 
       if (potMessages[i][j].channel == 16) {  // OMNI
         for (byte ch = 0; ch < 16; ch++) {
@@ -2571,8 +2642,14 @@ void initController() {
         Serial.print(potMessages[i][j].minValue);
         Serial.print("-");
         Serial.print(potMessages[i][j].maxValue);
-        Serial.print("], Dir=");
-        Serial.println(potMessages[i][j].inverted ? "INV" : "NOR");
+        Serial.print("], Curve=");
+        switch (potMessages[i][j].curve) {
+          case CURVE_NOR: Serial.print("NOR"); break;
+          case CURVE_INV: Serial.print("INV"); break;
+          case CURVE_LOG: Serial.print("LOG"); break;
+          case CURVE_ILG: Serial.print("ILG"); break;
+        }
+        Serial.println();
       } else {
         sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
         Serial.print("Sent MIDI: Pot ");
@@ -2589,8 +2666,14 @@ void initController() {
         Serial.print(potMessages[i][j].minValue);
         Serial.print("-");
         Serial.print(potMessages[i][j].maxValue);
-        Serial.print("], Dir=");
-        Serial.println(potMessages[i][j].inverted ? "INV" : "NOR");
+        Serial.print("], Curve=");
+        switch (potMessages[i][j].curve) {
+          case CURVE_NOR: Serial.print("NOR"); break;
+          case CURVE_INV: Serial.print("INV"); break;
+          case CURVE_LOG: Serial.print("LOG"); break;
+          case CURVE_ILG: Serial.print("ILG"); break;
+        }
+        Serial.println();
       }
     }
   }
@@ -2692,18 +2775,18 @@ void handleParameterEditWithPot() {
   if (currentScreen == SCENE_SCREEN && sceneEditMode != SCENE_EDIT_NONE) {
     // Read the selected edit potentiometer
     int pot8Raw = analogRead(POT_PIN[editPotSelection]);
-
+    
     // Update responsive analog reading for smoother values
     responsivePot[editPotSelection].update(pot8Raw);
     int potValue = responsivePot[editPotSelection].getValue();
-
+    
     // Debounce: only process if value has changed significantly
     if (abs(potValue - lastPot8Value) > 5) {
       lastPot8Value = potValue;
       lastPot8ChangeTime = millis();
-
+      
       bool valueChanged = false;
-
+      
       // Handle different edit modes
       if (sceneEditMode == SCENE_EDIT_CC) {
         // Map 0-1023 to 0-127 for CC value
@@ -2754,7 +2837,7 @@ void handleParameterEditWithPot() {
           Serial.println(customSceneOrder[customSceneEditPosition] + 1);
         }
       }
-
+      
       // Force screen refresh if value changed
       if (valueChanged) {
         drawSceneScreen();
@@ -2762,7 +2845,7 @@ void handleParameterEditWithPot() {
     }
     return;
   }
-
+  
   // Only process assign screen editing
   if (currentScreen != ASSIGN_SCREEN || !assignEditingMode) {
     return;
@@ -2850,14 +2933,19 @@ void handleParameterEditWithPot() {
 
       case ASSIGN_EDIT_INVERT:
         {
-          // Use potentiometer to toggle between NOR and INV
-          // Map to 0-1, with threshold at 512 (midpoint)
-          bool newInvert = (potValue > 512);
-          if (newInvert != potMessages[selectedPot][selectedMessage].inverted) {
-            potMessages[selectedPot][selectedMessage].inverted = newInvert;
+          // Map 0-1023 to 0-3 (four curve types)
+          int newCurve = map(potValue, 0, 1023, 0, 3);
+          CurveType newCurveType = (CurveType)newCurve;
+          if (newCurveType != potMessages[selectedPot][selectedMessage].curve) {
+            potMessages[selectedPot][selectedMessage].curve = newCurveType;
             valueChanged = true;
-            Serial.print("Direction set to: ");
-            Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR");
+            Serial.print("Curve set to: ");
+            switch (potMessages[selectedPot][selectedMessage].curve) {
+              case CURVE_NOR: Serial.println("NOR"); break;
+              case CURVE_INV: Serial.println("INV"); break;
+              case CURVE_LOG: Serial.println("LOG"); break;
+              case CURVE_ILG: Serial.println("ILG"); break;
+            }
           }
           break;
         }
@@ -2948,11 +3036,11 @@ void drawPotDisplay(int potIndex) {
     // CRITICAL FIX: Map the raw pot value (0-1023) to MIDI range (0-127)
     // Use the same mapping as normal operation for consistent display
     if (messageCount[potIndex] > 0) {
-      // Apply range and direction to the raw potentiometer value (0-1023)
+      // Apply range and curve to the raw potentiometer value (0-1023)
       displayValue = mapMidiValueWithParams(tempMidiValues[potIndex],
                                             potMessages[potIndex][0].minValue,
                                             potMessages[potIndex][0].maxValue,
-                                            potMessages[potIndex][0].inverted);
+                                            potMessages[potIndex][0].curve);
     } else {
       // Fallback to simple mapping if no messages
       displayValue = map(tempMidiValues[potIndex], 0, 1023, 0, 127);
@@ -3105,11 +3193,20 @@ void drawAssignScreen() {
       display.print(potMessages[selectedPot][messageIndex].maxValue);
       display.print(" | ");
 
-      // Show direction (NOR or INV)
-      if (potMessages[selectedPot][messageIndex].inverted) {
-        display.print("INV");
-      } else {
-        display.print("NOR");
+      // Show curve type (NOR, INV, LOG, ILG)
+      switch (potMessages[selectedPot][messageIndex].curve) {
+        case CURVE_NOR:
+          display.print("NOR");
+          break;
+        case CURVE_INV:
+          display.print("INV");
+          break;
+        case CURVE_LOG:
+          display.print("LOG");
+          break;
+        case CURVE_ILG:
+          display.print("ILG");
+          break;
       }
 
       // Show parameter edit indicator for selected message when in edit mode
@@ -3218,9 +3315,15 @@ void drawAssignScreen() {
               display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
               editX = 8 + w;
 
-              // Get the direction string width
-              String dirStr = potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR";
-              display.getTextBounds(dirStr, 0, 0, &x1, &y1, &w, &h);
+              // Get the curve string width
+              String curveStr;
+              switch (potMessages[selectedPot][selectedMessage].curve) {
+                case CURVE_NOR: curveStr = "NOR"; break;
+                case CURVE_INV: curveStr = "INV"; break;
+                case CURVE_LOG: curveStr = "LOG"; break;
+                case CURVE_ILG: curveStr = "ILG"; break;
+              }
+              display.getTextBounds(curveStr, 0, 0, &x1, &y1, &w, &h);
               parameterWidth = w;
               break;
             }
@@ -3252,10 +3355,11 @@ void drawAssignScreen() {
               display.print(potMessages[selectedPot][selectedMessage].maxValue);
               break;
             case ASSIGN_EDIT_INVERT:
-              if (potMessages[selectedPot][selectedMessage].inverted) {
-                display.print("INV");
-              } else {
-                display.print("NOR");
+              switch (potMessages[selectedPot][selectedMessage].curve) {
+                case CURVE_NOR: display.print("NOR"); break;
+                case CURVE_INV: display.print("INV"); break;
+                case CURVE_LOG: display.print("LOG"); break;
+                case CURVE_ILG: display.print("ILG"); break;
               }
               break;
           }
