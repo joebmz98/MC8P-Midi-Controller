@@ -224,6 +224,7 @@ bool confirmAssignSave = true;  // Track Y/N selection for ASSIGN save confirmat
 int currentSceneValue = 0;    // MIDI value 0-98 for scenes (display shows +1)
 int sceneCC = 82;             // MIDI CC for scene selection (editable)
 int editingSceneCC = false;   // Flag for editing scene CC in Scene Mode
+int originalSceneCC = 82;     // Store original value when entering edit mode
 const int SCENE_CHANNEL = 1;  // MIDI channel for scene messages (adjust as needed)
 
 // EEPROM STRUCTURES
@@ -641,17 +642,21 @@ void readButtons() {
                 selectedMenuItem = 0;  // Reset to first menu item
                 Serial.println("ASSIGN pressed - switching to MENU_SCREEN");
               } else if (currentScreen == SCENE_SCREEN) {
-                // From SCENE_SCREEN, ASSIGN button goes back to MENU_SCREEN
+                // From SCENE_SCREEN, ASSIGN button cancels editing and reverts value
                 if (editingSceneCC) {
-                  // If editing, save the value first
+                  // Revert to original value and exit edit mode
+                  sceneCC = originalSceneCC;
                   editingSceneCC = false;
-                  saveGlobalSettingsToEEPROM();
-                  Serial.print("Scene CC saved as: ");
+                  // Force screen refresh to show reverted value
+                  drawSceneScreen();
+                  Serial.print("Scene CC edit cancelled, reverted to: ");
                   Serial.println(sceneCC);
+                } else {
+                  // If not editing, just go back to MENU_SCREEN
+                  currentScreen = MENU_SCREEN;
+                  selectedMenuItem = 1;  // Keep Scene Mode selected in menu
+                  Serial.println("ASSIGN pressed - returning to MENU_SCREEN from SCENE_SCREEN");
                 }
-                currentScreen = MENU_SCREEN;
-                selectedMenuItem = 1;  // Keep Scene Mode selected in menu
-                Serial.println("ASSIGN pressed - returning to MENU_SCREEN from SCENE_SCREEN");
               } else if (currentScreen == MENU_SCREEN) {
                 // From MENU_SCREEN, ASSIGN button goes back to MAIN_SCREEN
                 currentScreen = MAIN_SCREEN;
@@ -855,7 +860,8 @@ void readButtons() {
                   Serial.print("Scene CC saved as: ");
                   Serial.println(sceneCC);
                 } else {
-                  // Enter edit mode
+                  // Enter edit mode - store original value
+                  originalSceneCC = sceneCC;
                   editingSceneCC = true;
                   Serial.println("Scene Mode - EDIT MODE ACTIVATED");
                 }
@@ -1674,7 +1680,7 @@ void sendControlChange(byte cc, byte value, byte channel) {
   MIDI.sendControlChange(cc, value, channel);
 
   // Send to USB MIDI
-  MIDI.sendControlChange(cc, value, channel);
+  usbMIDI.sendControlChange(cc, value, channel);
 }
 
 // *********************** //
@@ -2236,8 +2242,6 @@ void initController() {
   Serial.print(currentSceneValue + 1);
   Serial.println(")");
 
-  // Final loading bar completion
-  display.fillRoundRect(19, 40, 94, 4, 1, 0);
   display.display();
   delay(500);
 
@@ -2251,7 +2255,34 @@ void initController() {
 // HANDLE POT PARAMETER EDIT
 // *********************** //
 void handleParameterEditWithPot() {
-  // Only process when in assign screen and editing mode
+  // Handle scene screen editing
+  if (currentScreen == SCENE_SCREEN && editingSceneCC) {
+    // Read the selected edit potentiometer
+    int pot8Raw = analogRead(POT_PIN[editPotSelection]);
+    
+    // Update responsive analog reading for smoother values
+    responsivePot[editPotSelection].update(pot8Raw);
+    int potValue = responsivePot[editPotSelection].getValue();
+    
+    // Debounce: only process if value has changed significantly
+    if (abs(potValue - lastPot8Value) > 5) {
+      lastPot8Value = potValue;
+      lastPot8ChangeTime = millis();
+      
+      // Map 0-1023 to 0-127 for CC value
+      int newCC = map(potValue, 0, 1023, 0, 127);
+      if (newCC != sceneCC) {
+        sceneCC = newCC;
+        // Force screen refresh to update display
+        drawSceneScreen();
+        Serial.print("Scene CC adjusted to: ");
+        Serial.println(sceneCC);
+      }
+    }
+    return;
+  }
+  
+  // Only process assign screen editing
   if (currentScreen != ASSIGN_SCREEN || !assignEditingMode) {
     return;
   }
@@ -2872,7 +2903,7 @@ void drawMenuScreen() {
   display.setCursor(5, 25);
   display.println("- CC assign");
   display.setCursor(5, 35);
-  display.println("- Scene Mode");
+  display.println("- Scenes");
   display.setCursor(5, 45);
   display.println("- Settings");
 
@@ -2901,43 +2932,52 @@ void drawSceneScreen() {
 
   display.setTextColor(txtColor);
   display.setCursor(6, 11);
-  display.println("Scene Mode");
+  display.println("Scenes");
 
-  // Display Scene CC setting
-  display.setCursor(5, 30);
-  display.print("Scene CC: ");
+  // SCENE CC 
+  display.setCursor(5, 25);
+  display.print("- Scene CC: ");
+  // SCENE MODE
+  display.setCursor(5, 35);
+  display.print("- Scene Mode: ");
+
+  // Calculate box width based on sceneCC value length
+  int boxWidth;
+  if (sceneCC >= 100) {
+    boxWidth = 15;  // Width for 3-digit numbers (100-127)
+  } else if (sceneCC >= 10) {
+    boxWidth = 11;  // Width for 2-digit numbers (10-99)
+  } else {
+    boxWidth = 8;   // Width for 1-digit numbers (0-9)
+  }
+  
+  // Position the box based on where the number will be displayed
+  int boxX = 66;  // Starting X position for the box
+  int boxY = 18;
+  int boxHeight = 11;
 
   // Draw the CC value with editing indicator
   if (editingSceneCC) {
     // Flash the value when editing
     if ((millis() / 300) % 2 == 0) {
       // Draw filled box
-      display.fillRoundRect(70, 24, 25, 10, 1, txtColor);
+      display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, txtColor);
       display.setTextColor(bgColor);
-      display.setCursor(72, 30);
+      display.setCursor(68, 25);
       display.print(sceneCC);
       display.setTextColor(txtColor);
     } else {
       // Draw outline box
-      display.drawRoundRect(70, 24, 25, 10, 1, txtColor);
-      display.setCursor(72, 30);
+      display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, txtColor);
+      display.setCursor(68, 25);
       display.print(sceneCC);
     }
   } else {
-    // Normal display
-    display.setCursor(72, 30);
+    // Normal display - no box
+    display.setCursor(68, 25);
     display.print(sceneCC);
   }
-
-  // Display current scene number
-  display.setCursor(5, 45);
-  display.print("Current Scene: ");
   
-  if (currentSceneValue + 1 < 10) {
-    display.print("0");
-  }
-  display.print(currentSceneValue + 1);
-
   display.display();
 }
 
