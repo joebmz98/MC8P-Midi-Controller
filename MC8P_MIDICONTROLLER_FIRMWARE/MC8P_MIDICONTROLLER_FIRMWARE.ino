@@ -228,19 +228,21 @@ int originalSceneCC = 82;     // Store original value when entering edit mode
 const int SCENE_CHANNEL = 1;  // MIDI channel for scene messages (adjust as needed)
 
 // Scene Mode Navigation
-enum SceneNavigationMode { STEP_MODE, CUSTOM_MODE };
+enum SceneNavigationMode { STEP_MODE,
+                           CUSTOM_MODE };
 SceneNavigationMode sceneMode = STEP_MODE;  // Default to STEP mode
 int editingSceneMode = false;               // Flag for editing scene mode
 int originalSceneMode = STEP_MODE;          // Store original mode when editing
 
 // Custom scene order (max 16 scenes)
 const int MAX_CUSTOM_SCENES = 12;
-int customSceneOrder[MAX_CUSTOM_SCENES] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};  // Default sequence
-int customSceneLength = 12;                 // Number of scenes in custom order (1-16)
-int editingCustomScene = false;             // Flag for editing custom scenes
-int editingCustomSceneIndex = 0;            // Which scene in custom order is being edited
-int customSceneEditPosition = 0;            // Position in custom order being edited
-int originalCustomSceneValue = 0;           // Store original value when editing custom scene
+int customSceneOrder[MAX_CUSTOM_SCENES] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };  // Default sequence
+int customSceneLength = 12;                                                          // Number of scenes in custom order (1-16)
+int editingCustomScene = false;                                                      // Flag for editing custom scenes
+int editingCustomSceneIndex = 0;                                                     // Which scene in custom order is being edited
+int customSceneEditPosition = 0;                                                     // Position in custom order being edited
+int originalCustomSceneValue = 0;                                                    // Store original value when editing custom scene
+int lastCustomSceneEditPosition = 0;                                                 // Store last selected step position
 
 // Scene screen navigation states
 enum SceneScreenEditMode {
@@ -253,6 +255,7 @@ enum SceneScreenEditMode {
 
 SceneScreenEditMode sceneEditMode = SCENE_EDIT_NONE;
 int sceneSelectedParameter = 0;  // 0=CC, 1=Mode, 2=Custom (if in custom mode)
+bool selectingStep = false;      // True when navigating between sequence steps
 
 // EEPROM STRUCTURES
 // STRUCTURE TO SAVE MIDI CONFIGURATION TO EEPROM
@@ -277,11 +280,14 @@ struct GlobalSettings {
   bool displayInverted;
   int editPot;
   int sceneCC;
+  SceneNavigationMode sceneMode;
+  int customSceneLength;
+  int customSceneOrder[MAX_CUSTOM_SCENES];
 };
 
 // -- EEPROM VERSION
 #define SETTINGS_VERSION 2
-#define GLOBAL_SETTINGS_VERSION 2
+#define GLOBAL_SETTINGS_VERSION 3
 
 // EEPROM address for global settings
 #define GLOBAL_EEPROM_ADDR (EEPROM_ADDR)
@@ -354,6 +360,7 @@ bool confirmSelection = true;  // Track Y/N selection (true = Yes, false = No)
 int lastPot8Value = -1;
 unsigned long lastPot8ChangeTime = 0;
 
+
 // ***************************  //
 // SETUP
 // ***************************  //
@@ -374,6 +381,7 @@ void setup() {
   // INITIALISE
   initController();
 }
+
 
 // *************************** //
 // MAIN
@@ -685,8 +693,13 @@ void readButtons() {
                     Serial.println("Custom scene edit cancelled");
                   }
                   sceneEditMode = SCENE_EDIT_NONE;
+                  selectingStep = false;
                   drawSceneScreen();
                 } else {
+                  // If not editing, save current step position before leaving
+                  if (sceneMode == CUSTOM_MODE && selectingStep) {
+                    lastCustomSceneEditPosition = customSceneEditPosition;
+                  }
                   // If not editing, just go back to MENU_SCREEN
                   currentScreen = MENU_SCREEN;
                   selectedMenuItem = 1;  // Keep Scene Mode selected in menu
@@ -799,6 +812,19 @@ void readButtons() {
                     currentScreen = SCENE_SCREEN;
                     sceneEditMode = SCENE_EDIT_NONE;  // Start in viewing mode
                     sceneSelectedParameter = 0;       // Start with CC selected
+                    
+                    // Restore last step position if we were in step selection mode before
+                    if (sceneMode == CUSTOM_MODE) {
+                      customSceneEditPosition = lastCustomSceneEditPosition;
+                      // Validate the position is within bounds
+                      if (customSceneEditPosition >= customSceneLength) {
+                        customSceneEditPosition = customSceneLength - 1;
+                      }
+                      // Don't automatically enter step selection mode
+                      selectingStep = false;
+                    } else {
+                      selectingStep = false;
+                    }
                     Serial.println("ENTER pressed - switching to SCENE_SCREEN");
                     break;
                   case 2:  // Settings
@@ -895,10 +921,14 @@ void readButtons() {
                     saveGlobalSettingsToEEPROM();
                     Serial.print("Scene CC saved as: ");
                     Serial.println(sceneCC);
+                    // Keep focus on CC parameter after saving
+                    sceneSelectedParameter = 0;
                   } else if (sceneEditMode == SCENE_EDIT_MODE) {
                     saveGlobalSettingsToEEPROM();
                     Serial.print("Scene mode saved as: ");
                     Serial.println(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
+                    // Keep focus on Mode parameter after saving
+                    sceneSelectedParameter = 1;
                   } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
                     saveGlobalSettingsToEEPROM();
                     Serial.print("Custom scene length saved as: ");
@@ -910,42 +940,61 @@ void readButtons() {
                     if (customSceneEditPosition >= customSceneLength) {
                       customSceneEditPosition = customSceneLength - 1;
                     }
+                    // Keep focus on Length parameter after saving
+                    sceneSelectedParameter = 2;
                   } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
                     saveGlobalSettingsToEEPROM();
                     Serial.print("Custom scene order saved");
+                    // Keep focus on the sequence position after saving
+                    sceneSelectedParameter = 3;
+                    selectingStep = true;
                   }
                   sceneEditMode = SCENE_EDIT_NONE;
+                  // Don't reset selectingStep or sceneSelectedParameter here
+                  drawSceneScreen();
                 } else {
                   // Enter edit mode based on selected parameter
-                  switch (sceneSelectedParameter) {
-                    case 0:  // Scene CC
-                      originalSceneCC = sceneCC;
-                      sceneEditMode = SCENE_EDIT_CC;
-                      Serial.println("Scene CC - EDIT MODE ACTIVATED");
-                      break;
-                    case 1:  // Scene Mode
-                      originalSceneMode = sceneMode;
-                      sceneEditMode = SCENE_EDIT_MODE;
-                      Serial.println("Scene Mode - EDIT MODE ACTIVATED");
-                      break;
-                    case 2:  // Custom settings (only if in CUSTOM mode)
-                      if (sceneMode == CUSTOM_MODE) {
-                        // Toggle between length and value editing
-                        if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
+                  if (sceneMode == STEP_MODE) {
+                    // STEP mode only has CC and Mode
+                    switch (sceneSelectedParameter) {
+                      case 0:  // Scene CC
+                        originalSceneCC = sceneCC;
+                        sceneEditMode = SCENE_EDIT_CC;
+                        Serial.println("Scene CC - EDIT MODE ACTIVATED");
+                        break;
+                      case 1:  // Scene Mode
+                        originalSceneMode = sceneMode;
+                        sceneEditMode = SCENE_EDIT_MODE;
+                        Serial.println("Scene Mode - EDIT MODE ACTIVATED");
+                        break;
+                    }
+                  } else {
+                    // CUSTOM mode - handle all parameters
+                    if (sceneSelectedParameter == 3) {
+                      // Sequence position selected - enter value edit mode
+                      sceneEditMode = SCENE_EDIT_CUSTOM_VALUE;
+                      Serial.println("Custom Value - EDIT MODE ACTIVATED");
+                    } else {
+                      switch (sceneSelectedParameter) {
+                        case 0:  // Scene CC
+                          originalSceneCC = sceneCC;
+                          sceneEditMode = SCENE_EDIT_CC;
+                          Serial.println("Scene CC - EDIT MODE ACTIVATED");
+                          break;
+                        case 1:  // Scene Mode
+                          originalSceneMode = sceneMode;
+                          sceneEditMode = SCENE_EDIT_MODE;
+                          Serial.println("Scene Mode - EDIT MODE ACTIVATED");
+                          break;
+                        case 2:  // Custom Length
                           sceneEditMode = SCENE_EDIT_CUSTOM_LENGTH;
                           Serial.println("Custom Length - EDIT MODE ACTIVATED");
-                        } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
-                          sceneEditMode = SCENE_EDIT_CUSTOM_VALUE;
-                          Serial.println("Custom Value - EDIT MODE ACTIVATED");
-                        } else {
-                          sceneEditMode = SCENE_EDIT_CUSTOM_LENGTH;
-                          Serial.println("Custom Length - EDIT MODE ACTIVATED");
-                        }
+                          break;
                       }
-                      break;
+                    }
                   }
+                  drawSceneScreen();
                 }
-                drawSceneScreen();
               }
 
               // CONFIRM ASSIGN SAVE SCREEN - CONFIRM SELECTION
@@ -1107,13 +1156,49 @@ void readButtons() {
               // *********************** //
               else if (currentScreen == SCENE_SCREEN) {
                 if (sceneEditMode == SCENE_EDIT_NONE) {
-                  // Navigate between parameters
-                  if (sceneMode == STEP_MODE) {
-                    sceneSelectedParameter = (sceneSelectedParameter - 1 + 2) % 2;  // Only CC and Mode
+                  // Check if we're in step selection mode (for CUSTOM mode)
+                  if (sceneMode == CUSTOM_MODE && selectingStep) {
+                    // Navigate between steps in the sequence
+                    if (customSceneEditPosition > 0) {
+                      customSceneEditPosition--;
+                      Serial.print("Selected step position: ");
+                      Serial.println(customSceneEditPosition + 1);
+                      drawSceneScreen();
+                    } else if (customSceneEditPosition == 0) {
+                      // At first step, move back to Length parameter
+                      selectingStep = false;
+                      sceneSelectedParameter = 2;  // Length parameter
+                      Serial.println("Moved back to Length parameter");
+                      drawSceneScreen();
+                    }
                   } else {
-                    sceneSelectedParameter = (sceneSelectedParameter - 1 + 3) % 3;  // CC, Mode, Custom
+                    // Navigate between parameters
+                    if (sceneMode == STEP_MODE) {
+                      sceneSelectedParameter = (sceneSelectedParameter - 1 + 2) % 2;  // Only CC and Mode
+                      drawSceneScreen();
+                    } else {
+                      // CUSTOM mode parameter navigation
+                      if (sceneSelectedParameter == 0) {
+                        // At CC, go to sequence positions (last step)
+                        sceneSelectedParameter = 3;
+                        selectingStep = true;
+                        customSceneEditPosition = customSceneLength - 1;  // Start at last step
+                        Serial.println("Entered step selection mode at last step");
+                      } else if (sceneSelectedParameter == 3) {
+                        // At sequence positions, move to Length
+                        sceneSelectedParameter = 2;
+                        selectingStep = false;
+                        Serial.println("Moved to Length parameter");
+                      } else if (sceneSelectedParameter == 2) {
+                        // At Length, move to Mode
+                        sceneSelectedParameter = 1;
+                      } else if (sceneSelectedParameter == 1) {
+                        // At Mode, move to CC
+                        sceneSelectedParameter = 0;
+                      }
+                      drawSceneScreen();
+                    }
                   }
-                  drawSceneScreen();
                 } else if (sceneEditMode == SCENE_EDIT_CC) {
                   // Decrease scene CC value
                   if (sceneCC > 0) {
@@ -1129,6 +1214,7 @@ void readButtons() {
                   Serial.println(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
                   // Reset selected parameter when switching modes
                   sceneSelectedParameter = 0;
+                  selectingStep = false;
                   drawSceneScreen();
                 } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
                   // Decrease custom scene length
@@ -1145,11 +1231,13 @@ void readButtons() {
                     drawSceneScreen();
                   }
                 } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
-                  // Navigate to previous position in custom scene order
-                  if (customSceneEditPosition > 0) {
-                    customSceneEditPosition--;
-                    Serial.print("Editing custom scene position: ");
-                    Serial.println(customSceneEditPosition + 1);
+                  // Decrease the scene value at current position
+                  if (customSceneOrder[customSceneEditPosition] > 0) {
+                    customSceneOrder[customSceneEditPosition]--;
+                    Serial.print("Custom scene at position ");
+                    Serial.print(customSceneEditPosition + 1);
+                    Serial.print(" set to: ");
+                    Serial.println(customSceneOrder[customSceneEditPosition] + 1);
                     drawSceneScreen();
                   }
                 }
@@ -1403,13 +1491,49 @@ void readButtons() {
               // *********************** //
               else if (currentScreen == SCENE_SCREEN) {
                 if (sceneEditMode == SCENE_EDIT_NONE) {
-                  // Navigate between parameters
-                  if (sceneMode == STEP_MODE) {
-                    sceneSelectedParameter = (sceneSelectedParameter + 1) % 2;  // Only CC and Mode
+                  // Check if we're in step selection mode (for CUSTOM mode)
+                  if (sceneMode == CUSTOM_MODE && selectingStep) {
+                    // Navigate between steps in the sequence
+                    if (customSceneEditPosition < customSceneLength - 1) {
+                      customSceneEditPosition++;
+                      Serial.print("Selected step position: ");
+                      Serial.println(customSceneEditPosition + 1);
+                      drawSceneScreen();
+                    } else if (customSceneEditPosition == customSceneLength - 1) {
+                      // At last step, move to CC parameter
+                      selectingStep = false;
+                      sceneSelectedParameter = 0;  // CC parameter
+                      Serial.println("Moved to CC parameter");
+                      drawSceneScreen();
+                    }
                   } else {
-                    sceneSelectedParameter = (sceneSelectedParameter + 1) % 3;  // CC, Mode, Custom
+                    // Navigate between parameters
+                    if (sceneMode == STEP_MODE) {
+                      sceneSelectedParameter = (sceneSelectedParameter + 1) % 2;  // Only CC and Mode
+                      drawSceneScreen();
+                    } else {
+                      // CUSTOM mode parameter navigation
+                      if (sceneSelectedParameter == 0) {
+                        // At CC, move to Mode
+                        sceneSelectedParameter = 1;
+                      } else if (sceneSelectedParameter == 1) {
+                        // At Mode, move to Length
+                        sceneSelectedParameter = 2;
+                      } else if (sceneSelectedParameter == 2) {
+                        // At Length, move to sequence positions (first step)
+                        sceneSelectedParameter = 3;
+                        selectingStep = true;
+                        customSceneEditPosition = 0;  // Start at first step
+                        Serial.println("Entered step selection mode at first step");
+                      } else if (sceneSelectedParameter == 3) {
+                        // At sequence positions, wrap to CC
+                        sceneSelectedParameter = 0;
+                        selectingStep = false;
+                        Serial.println("Moved to CC parameter");
+                      }
+                      drawSceneScreen();
+                    }
                   }
-                  drawSceneScreen();
                 } else if (sceneEditMode == SCENE_EDIT_CC) {
                   // Increase scene CC value
                   if (sceneCC < 127) {
@@ -1425,6 +1549,7 @@ void readButtons() {
                   Serial.println(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
                   // Reset selected parameter when switching modes
                   sceneSelectedParameter = 0;
+                  selectingStep = false;
                   drawSceneScreen();
                 } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
                   // Increase custom scene length (max 12)
@@ -1435,11 +1560,13 @@ void readButtons() {
                     drawSceneScreen();
                   }
                 } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
-                  // Navigate to next position in custom scene order
-                  if (customSceneEditPosition < customSceneLength - 1) {
-                    customSceneEditPosition++;
-                    Serial.print("Editing custom scene position: ");
-                    Serial.println(customSceneEditPosition + 1);
+                  // Increase the scene value at current position
+                  if (customSceneOrder[customSceneEditPosition] < 98) {
+                    customSceneOrder[customSceneEditPosition]++;
+                    Serial.print("Custom scene at position ");
+                    Serial.print(customSceneEditPosition + 1);
+                    Serial.print(" set to: ");
+                    Serial.println(customSceneOrder[customSceneEditPosition] + 1);
                     drawSceneScreen();
                   }
                 }
@@ -2112,6 +2239,17 @@ void factoryReset() {
   // Reset edit pot selection
   editPotSelection = 7;
 
+  // Reset scene settings
+  sceneCC = 82;
+  sceneMode = STEP_MODE;
+  customSceneLength = 6;  // Set to 6 instead of 12
+  currentSceneValue = 0;
+
+  // Reset custom scene order
+  for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+    customSceneOrder[i] = i;
+  }
+
   // CRITICAL FIX: Force a complete EEPROM write with verified data
   // First, save MIDI settings
   saveMidiSettingsToEEPROM();
@@ -2144,13 +2282,10 @@ void factoryReset() {
   scrollOffset = 0;
   assignEditMode = ASSIGN_POT_SELECT;
   assignEditingMode = false;
-  
-  // Reset scene CC value
-  sceneCC = 82;
-  currentSceneValue = 0;
 
   Serial.println("Factory reset completed!");
   Serial.println("All pots reset to: Channel 1-8, CC7, Range 0-127, Normal direction");
+  Serial.println("Scene settings reset: CC=82, Mode=STEP, Custom Length=6");
   Serial.println("=== FACTORY RESET COMPLETE ===");
 
   // Visual feedback
@@ -2171,7 +2306,14 @@ void saveGlobalSettingsToEEPROM() {
   settings.version = GLOBAL_SETTINGS_VERSION;
   settings.displayInverted = displayInverted;
   settings.editPot = editPotSelection;
-  settings.sceneCC = sceneCC;  // Add this line
+  settings.sceneCC = sceneCC;
+  settings.sceneMode = sceneMode;                  // Save scene mode
+  settings.customSceneLength = customSceneLength;  // Save custom length
+
+  // Save custom scene order
+  for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+    settings.customSceneOrder[i] = customSceneOrder[i];
+  }
 
   EEPROM.put(GLOBAL_EEPROM_ADDR, settings);
   Serial.println("Global settings saved to EEPROM");
@@ -2187,13 +2329,33 @@ void loadGlobalSettingsFromEEPROM() {
   if (settings.signature == EEPROM_SIGNATURE && settings.version == GLOBAL_SETTINGS_VERSION) {
     displayInverted = settings.displayInverted;
     editPotSelection = settings.editPot;
-    sceneCC = settings.sceneCC;  // Add this line
+    sceneCC = settings.sceneCC;
+
+    // Load scene settings
+    sceneMode = settings.sceneMode;
+    customSceneLength = settings.customSceneLength;
+
+    // Load custom scene order
+    for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+      customSceneOrder[i] = settings.customSceneOrder[i];
+    }
+
+    // Validate sceneMode
+    if (sceneMode != STEP_MODE && sceneMode != CUSTOM_MODE) {
+      sceneMode = STEP_MODE;  // Default to STEP mode if invalid
+    }
+
+    // Validate customSceneLength (1-12)
+    if (customSceneLength < 1 || customSceneLength > MAX_CUSTOM_SCENES) {
+      customSceneLength = 6;  // Default to 6 if invalid
+    }
 
     // Validate sceneCC range
     if (sceneCC < 0 || sceneCC > 127) {
       sceneCC = 82;  // Default to CC 82 if invalid
     }
 
+    // Validate editPotSelection
     if (editPotSelection < 0 || editPotSelection >= N_POTS) {
       editPotSelection = 7;
     }
@@ -2203,7 +2365,14 @@ void loadGlobalSettingsFromEEPROM() {
     Serial.println("No valid global settings found, using defaults");
     displayInverted = false;
     editPotSelection = 7;
-    sceneCC = 82;  // Default to CC 82
+    sceneCC = 82;
+    sceneMode = STEP_MODE;  // Default scene mode
+    customSceneLength = 6;  // Default custom scene length to 6
+
+    // Initialize default custom scene order
+    for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+      customSceneOrder[i] = i;
+    }
   }
 }
 
@@ -2264,7 +2433,7 @@ void initController() {
   display.display();
   delay(250);
 
-  // SECOND: Load global settings (display inversion, edit pot, and scene CC)
+  // SECOND: Load global settings (display inversion, edit pot, and scene settings)
   Serial.println("=== BOOTUP DEBUG ===");
   Serial.println("Loading global settings...");
   loadGlobalSettingsFromEEPROM();
@@ -2427,30 +2596,84 @@ void initController() {
   }
 
   // SCENES/PROJECT INIT
-  // Note: currentSceneValue and sceneCC are already loaded from EEPROM in loadGlobalSettingsFromEEPROM()
-  // If this is a first boot or invalid values, they would have been set to defaults (0 and 82)
-  
+  // Note: currentSceneValue, sceneCC, sceneMode, customSceneLength, and customSceneOrder
+  // are already loaded from EEPROM in loadGlobalSettingsFromEEPROM()
+  // If this is a first boot or invalid values, they would have been set to defaults in loadGlobalSettingsFromEEPROM()
+
   // Validate sceneCC range (0-127)
   if (sceneCC < 0 || sceneCC > 127) {
     sceneCC = 82;  // Default to CC 82 if invalid
     Serial.println("Invalid sceneCC value detected, reset to 82");
   }
-  
-  // Validate currentSceneValue range (0-98 for 99 scenes)
-  if (currentSceneValue < 0 || currentSceneValue > 98) {
-    currentSceneValue = 0;  // Default to scene 1 if invalid
-    Serial.println("Invalid currentSceneValue detected, reset to 0 (Scene 1)");
+
+  // Validate sceneMode
+  if (sceneMode != STEP_MODE && sceneMode != CUSTOM_MODE) {
+    sceneMode = STEP_MODE;  // Default to STEP mode if invalid
+    Serial.println("Invalid sceneMode detected, reset to STEP_MODE");
   }
-  
+
+  // Validate customSceneLength (1-12)
+  if (customSceneLength < 1 || customSceneLength > MAX_CUSTOM_SCENES) {
+    customSceneLength = 6;  // Default to 6 if invalid
+    Serial.println("Invalid customSceneLength detected, reset to 6");
+  }
+
+  // Validate customSceneOrder array values
+  bool validOrder = true;
+  for (int i = 0; i < customSceneLength; i++) {
+    if (customSceneOrder[i] < 0 || customSceneOrder[i] > 98) {
+      validOrder = false;
+      break;
+    }
+  }
+  if (!validOrder) {
+    Serial.println("Invalid customSceneOrder detected, resetting to default sequence");
+    for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+      customSceneOrder[i] = i;
+    }
+  }
+
+  // Validate currentSceneValue range (0-98 for 99 scenes, or within customSceneLength for custom mode)
+  if (sceneMode == STEP_MODE) {
+    if (currentSceneValue < 0 || currentSceneValue > 98) {
+      currentSceneValue = 0;  // Default to scene 1 if invalid
+      Serial.println("Invalid currentSceneValue detected, reset to 0 (Scene 1)");
+    }
+  } else {  // CUSTOM_MODE
+    if (currentSceneValue < 0 || currentSceneValue >= customSceneLength) {
+      currentSceneValue = 0;  // Default to first custom scene if invalid
+      Serial.println("Invalid currentSceneValue for custom mode, reset to 0");
+    }
+  }
+
   // Send initial scene value to sync with OP-XY using the loaded sceneCC
-  sendControlChange(sceneCC, currentSceneValue, SCENE_CHANNEL);
+  int initialSceneValue;
+  if (sceneMode == STEP_MODE) {
+    initialSceneValue = currentSceneValue;
+  } else {
+    initialSceneValue = customSceneOrder[currentSceneValue];
+  }
+  sendControlChange(sceneCC, initialSceneValue, SCENE_CHANNEL);
   Serial.print("Scene initialized with CC: ");
   Serial.print(sceneCC);
-  Serial.print(", value: ");
-  Serial.print(currentSceneValue);
+  Serial.print(", Mode: ");
+  Serial.print(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
+  Serial.print(", Value: ");
+  Serial.print(initialSceneValue);
   Serial.print(" (Scene ");
-  Serial.print(currentSceneValue + 1);
+  Serial.print(initialSceneValue + 1);
   Serial.println(")");
+
+  if (sceneMode == CUSTOM_MODE) {
+    Serial.print("Custom scene length: ");
+    Serial.print(customSceneLength);
+    Serial.print(", Sequence: ");
+    for (int i = 0; i < customSceneLength; i++) {
+      Serial.print(customSceneOrder[i] + 1);
+      if (i < customSceneLength - 1) Serial.print(", ");
+    }
+    Serial.println();
+  }
 
   display.display();
   delay(500);
@@ -2466,32 +2689,80 @@ void initController() {
 // *********************** //
 void handleParameterEditWithPot() {
   // Handle scene screen editing
-  if (currentScreen == SCENE_SCREEN && editingSceneCC) {
+  if (currentScreen == SCENE_SCREEN && sceneEditMode != SCENE_EDIT_NONE) {
     // Read the selected edit potentiometer
     int pot8Raw = analogRead(POT_PIN[editPotSelection]);
-    
+
     // Update responsive analog reading for smoother values
     responsivePot[editPotSelection].update(pot8Raw);
     int potValue = responsivePot[editPotSelection].getValue();
-    
+
     // Debounce: only process if value has changed significantly
     if (abs(potValue - lastPot8Value) > 5) {
       lastPot8Value = potValue;
       lastPot8ChangeTime = millis();
-      
-      // Map 0-1023 to 0-127 for CC value
-      int newCC = map(potValue, 0, 1023, 0, 127);
-      if (newCC != sceneCC) {
-        sceneCC = newCC;
-        // Force screen refresh to update display
+
+      bool valueChanged = false;
+
+      // Handle different edit modes
+      if (sceneEditMode == SCENE_EDIT_CC) {
+        // Map 0-1023 to 0-127 for CC value
+        int newCC = map(potValue, 0, 1023, 0, 127);
+        if (newCC != sceneCC) {
+          sceneCC = newCC;
+          valueChanged = true;
+          Serial.print("Scene CC adjusted to: ");
+          Serial.println(sceneCC);
+        }
+      } else if (sceneEditMode == SCENE_EDIT_MODE) {
+        // Map 0-1023 to 0-1 (STEP=0, CUSTOM=1)
+        int newMode = (potValue > 512) ? 1 : 0;
+        SceneNavigationMode newSceneMode = (newMode == 0) ? STEP_MODE : CUSTOM_MODE;
+        if (newSceneMode != sceneMode) {
+          sceneMode = newSceneMode;
+          valueChanged = true;
+          Serial.print("Scene mode changed to: ");
+          Serial.println(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
+          // Reset selected parameter when switching modes
+          sceneSelectedParameter = 0;
+        }
+      } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
+        // Map 0-1023 to 1-12 for custom length
+        int newLength = map(potValue, 0, 1023, 1, MAX_CUSTOM_SCENES);
+        if (newLength != customSceneLength) {
+          customSceneLength = newLength;
+          // Ensure currentSceneValue and edit position are within new bounds
+          if (currentSceneValue >= customSceneLength) {
+            currentSceneValue = customSceneLength - 1;
+          }
+          if (customSceneEditPosition >= customSceneLength) {
+            customSceneEditPosition = customSceneLength - 1;
+          }
+          valueChanged = true;
+          Serial.print("Custom scene length adjusted to: ");
+          Serial.println(customSceneLength);
+        }
+      } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
+        // Map 0-1023 to 0-98 for scene value
+        int newValue = map(potValue, 0, 1023, 0, 98);
+        if (newValue != customSceneOrder[customSceneEditPosition]) {
+          customSceneOrder[customSceneEditPosition] = newValue;
+          valueChanged = true;
+          Serial.print("Custom scene at position ");
+          Serial.print(customSceneEditPosition + 1);
+          Serial.print(" adjusted to: ");
+          Serial.println(customSceneOrder[customSceneEditPosition] + 1);
+        }
+      }
+
+      // Force screen refresh if value changed
+      if (valueChanged) {
         drawSceneScreen();
-        Serial.print("Scene CC adjusted to: ");
-        Serial.println(sceneCC);
       }
     }
     return;
   }
-  
+
   // Only process assign screen editing
   if (currentScreen != ASSIGN_SCREEN || !assignEditingMode) {
     return;
@@ -3154,15 +3425,30 @@ void drawSceneScreen() {
   display.setCursor(6, 11);
   display.println("Scenes");
 
-  // Draw indicator for selected parameter (before drawing text)
-  int indicatorX = 100;
-  int indicatorY = 21 + (sceneSelectedParameter * 10);
-  display.drawBitmap(indicatorX, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
+  // Only show bitmap indicator for non-sequence parameters (CC, Mode, Length)
+  // NOT when in edit mode
+  if (sceneEditMode == SCENE_EDIT_NONE) {
+    if (sceneMode == STEP_MODE) {
+      // STEP mode only has CC and Mode
+      if (sceneSelectedParameter < 2) {
+        int indicatorX = 100;
+        int indicatorY = 21 + (sceneSelectedParameter * 10);
+        display.drawBitmap(indicatorX, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
+      }
+    } else {
+      // CUSTOM mode - show indicator for CC, Mode, Length (but not for sequence values)
+      if (sceneSelectedParameter < 3) {
+        int indicatorX = 100;
+        int indicatorY = 21 + (sceneSelectedParameter * 10);
+        display.drawBitmap(indicatorX, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
+      }
+    }
+  }
 
-  // SCENE CC 
+  // SCENE CC
   display.setCursor(5, 25);
   display.print("- Scene CC: ");
-  
+
   // Calculate box width based on sceneCC value length
   int boxWidth;
   if (sceneCC >= 100) {
@@ -3172,7 +3458,7 @@ void drawSceneScreen() {
   } else {
     boxWidth = 8;
   }
-  
+
   int boxX = 66;
   int boxY = 18;
   int boxHeight = 11;
@@ -3194,15 +3480,15 @@ void drawSceneScreen() {
     display.setCursor(68, 25);
     display.print(sceneCC);
   }
-  
+
   // SCENE MODE
   display.setCursor(5, 35);
   display.print("- Mode: ");
-  
+
   int modeBoxX = 66;
   int modeBoxY = 28;
   int modeBoxWidth = 30;
-  
+
   if (sceneEditMode == SCENE_EDIT_MODE) {
     if ((millis() / 300) % 2 == 0) {
       display.fillRoundRect(modeBoxX, modeBoxY, modeBoxWidth, boxHeight, 1, txtColor);
@@ -3231,17 +3517,17 @@ void drawSceneScreen() {
       display.print("CUSTOM");
     }
   }
-  
+
   // Custom scene settings (only show in CUSTOM mode)
   if (sceneMode == CUSTOM_MODE) {
     // Custom scene length (max 12)
     display.setCursor(5, 45);
     display.print("- Length: ");
-    
+
     int lengthBoxX = 66;
     int lengthBoxY = 38;
     int lengthBoxWidth = 10;
-    
+
     if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
       if ((millis() / 300) % 2 == 0) {
         display.fillRoundRect(lengthBoxX, lengthBoxY, lengthBoxWidth, boxHeight, 1, txtColor);
@@ -3258,16 +3544,16 @@ void drawSceneScreen() {
       display.setCursor(68, 45);
       display.print(customSceneLength);
     }
-    
+
     // Display custom scene order horizontally
     int startX = 5;
     int startY = 55;
     int spacing = 9;  // 9 pixels between each scene value
-    
+
     // Draw the scene sequence values horizontally
     for (int i = 0; i < customSceneLength; i++) {
       int xPos = startX + (i * spacing);
-      
+
       // Format the scene value (add leading zero for single digits)
       String sceneValue;
       if (customSceneOrder[i] + 1 < 10) {
@@ -3275,19 +3561,26 @@ void drawSceneScreen() {
       } else {
         sceneValue = String(customSceneOrder[i] + 1);
       }
-      
-      // If this position is being edited, highlight it
+
+      // Draw a line above the currently selected sequence position (when not editing)
+      if (sceneEditMode == SCENE_EDIT_NONE && sceneSelectedParameter == 3 && customSceneEditPosition == i) {
+        // Draw line above the selected value
+        display.drawLine(xPos + 3, startY - 7, xPos + 3, startY - 6, txtColor);
+        display.drawLine(xPos + 3, startY + 2, xPos + 3, startY + 3, txtColor);
+      }
+
+      // If this position is being edited, highlight it with flashing box
       if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE && customSceneEditPosition == i) {
         if ((millis() / 300) % 2 == 0) {
           // Draw filled background for the selected scene value
-          display.fillRect(xPos - 1, startY - 1, 14, 9, txtColor);
+          display.fillRect(xPos - 2, startY - 6, 10, 9, txtColor);
           display.setTextColor(bgColor);
           display.setCursor(xPos, startY);
           display.print(sceneValue);
           display.setTextColor(txtColor);
         } else {
           // Draw outline box for the selected scene value
-          display.drawRect(xPos - 1, startY - 1, 14, 9, txtColor);
+          display.drawRect(xPos - 2, startY - 6, 10, 9, txtColor);
           display.setCursor(xPos, startY);
           display.print(sceneValue);
         }
@@ -3298,7 +3591,7 @@ void drawSceneScreen() {
       }
     }
   }
-  
+
   display.display();
 }
 
