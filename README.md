@@ -177,3 +177,9 @@ When saving changes or performing a factory reset, a popup screen appears asking
 - **Custom Requests:** Start a thread in the discussions page or send me an E-mail! axs.instruments@gmail.com
 - **Want to improve it?** PRs welcome!
 - **Special Thanks:** This project is supported by **PCBWay** who have kindly provided the PCB stock available at the moment
+
+---
+
+## **Acknowledgments**
+
+PCBway very kindly offered to sponsor this project and have sent me some more stock for the shop. Thank you to PCBway for supporting this passion project of mine. Emily from the marketing department reached out to me when I first launched the product and store and very kindly offered to sponsor the project. Both working with them and using their services was really easy. All I needed to do was export my PCB gerber files, drag and drop them on the 'PCB Instant Quote' page and send it off for approval. I received my order a week later and was very happy with the quality of the PCBs. Thank you again PCBway for your support.
