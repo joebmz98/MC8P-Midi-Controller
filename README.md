@@ -9,7 +9,7 @@ A customizable, open-source MIDI controller with **8 potentiometers**, each supp
 <img src="https://github.com/joebmz98/MC8P-Midi-Controller/raw/main/MC8P_MIDI_CONTROLLERS_MEDIA/PHOTOS/P1155438.JPG" alt="Photo of the assembled MC8P MIDI Controller" width="600"/>
 
 ---
-## Demo Video
+## Introducing the MC8P Video
 
 [![Watch the introduction video](https://img.youtube.com/vi/sK4E2PJmlkE/0.jpg)](https://www.youtube.com/watch?v=sK4E2PJmlkE)
 ---
