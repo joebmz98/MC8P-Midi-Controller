@@ -1,7 +1,7 @@
 // ********************* //
 // MC8P Standalone       //
 // MIDI Controller       //
-// firmware version 2.0  //
+// firmware version 2.1  //
 // Hardware Version: 1.0 //
 // ********************* //
 // controller by         //
