@@ -12528,7 +12528,6 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "f1379273-24a0-4767-b1d5-47812784829c")
 		(property "Reference" "D2"
 			(at 183.1975 134.62 0)
@@ -12546,8 +12545,8 @@
 				)
 			)
 		)
-		(property "Footprint" "PCM_Diode_SMD_AKL:D_1206_3216Metric_Pad1.42x1.75mm_HandSolder"
-			(at 182.88 140.97 0)
+		(property "Footprint" "Diode_SMD:D_SOD-123"
+			(at 183.388 131.572 0)
 			(effects
 				(font
 					(size 1.27 1.27)
