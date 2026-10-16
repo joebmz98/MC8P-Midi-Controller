@@ -1878,6 +1878,200 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "PCM_4ms_Regulator:Polyfuse_3A_15V"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "F"
+				(at -2.54 0 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Polyfuse_3A_15V"
+				(at 2.54 0 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Fuse:Fuse_1812_4532Metric"
+				(at -6.35 -16.51 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "3A trip, 1.5A hold Resettable fuse, polymeric positive temperature coefficient"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Specifications" "Itrip=3.0A, MaxV > 15V, 1812 package"
+				(at 0 -12.7 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Manufacturer" "LittleFuse"
+				(at 0 -8.89 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Part Number" "miniSMDC150F/24"
+				(at 0 -11.43 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "JLCPCB ID" "C207070 "
+				(at 0 -20.32 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Part Number 2" "1812L150/16"
+				(at 1.27 -17.78 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "Fuse"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "*polyfuse* *PTC*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "Polyfuse_3A_15V_0_1"
+				(polyline
+					(pts
+						(xy -1.524 2.54) (xy -1.524 1.524) (xy 1.524 -1.524) (xy 1.524 -2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(rectangle
+					(start -0.762 2.54)
+					(end 0.762 -2.54)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 2.54) (xy 0 -2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "Polyfuse_3A_15V_1_1"
+				(pin passive line
+					(at 0 3.81 270)
+					(length 1.27)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 0 -3.81 90)
+					(length 1.27)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "PCM_4ms_Resistor:10k_0402"
 			(pin_numbers
 				(hide yes)
@@ -3774,7 +3968,7 @@
 	)
 	(rectangle
 		(start 133.35 128.27)
-		(end 194.31 160.02)
+		(end 209.55 160.02)
 		(stroke
 			(width 0)
 			(type default)
@@ -3937,6 +4131,12 @@
 		(uuid "2fb14834-279b-4955-8753-d0ed4d2f5fa0")
 	)
 	(junction
+		(at 179.07 140.97)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "354ec331-f3ad-4fa2-8be6-4a3aa1305b91")
+	)
+	(junction
 		(at 158.75 81.28)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -3955,7 +4155,7 @@
 		(uuid "4ba9eebc-a41e-4dae-88b5-3608b3078215")
 	)
 	(junction
-		(at 172.72 140.97)
+		(at 190.5 140.97)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "4bc9d1e7-e866-417c-9b02-65ed5881d4ca")
@@ -4025,12 +4225,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "eced47a1-ea17-4315-93c3-5cead674b99c")
-	)
-	(junction
-		(at 161.29 140.97)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "f7293403-2b65-4b83-a0a7-7b22aa7c91ed")
 	)
 	(no_connect
 		(at 120.65 127)
@@ -4146,7 +4340,7 @@
 	)
 	(wire
 		(pts
-			(xy 161.29 147.32) (xy 161.29 148.59)
+			(xy 179.07 147.32) (xy 179.07 148.59)
 		)
 		(stroke
 			(width 0)
@@ -4556,6 +4750,16 @@
 	)
 	(wire
 		(pts
+			(xy 170.18 140.97) (xy 179.07 140.97)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6715c723-7598-49e6-b215-5c1b4073496b")
+	)
+	(wire
+		(pts
 			(xy 205.74 35.56) (xy 205.74 34.29)
 		)
 		(stroke
@@ -4706,7 +4910,7 @@
 	)
 	(wire
 		(pts
-			(xy 161.29 140.97) (xy 161.29 142.24)
+			(xy 179.07 140.97) (xy 179.07 142.24)
 		)
 		(stroke
 			(width 0)
@@ -4826,16 +5030,6 @@
 	)
 	(wire
 		(pts
-			(xy 153.67 140.97) (xy 161.29 140.97)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a26e3569-f09c-43ad-ad48-92b7478d8642")
-	)
-	(wire
-		(pts
 			(xy 158.75 80.01) (xy 158.75 81.28)
 		)
 		(stroke
@@ -4856,7 +5050,7 @@
 	)
 	(wire
 		(pts
-			(xy 161.29 140.97) (xy 172.72 140.97)
+			(xy 179.07 140.97) (xy 190.5 140.97)
 		)
 		(stroke
 			(width 0)
@@ -5016,7 +5210,7 @@
 	)
 	(wire
 		(pts
-			(xy 172.72 140.97) (xy 179.07 140.97)
+			(xy 190.5 140.97) (xy 196.85 140.97)
 		)
 		(stroke
 			(width 0)
@@ -5163,6 +5357,16 @@
 			(type default)
 		)
 		(uuid "e50b0831-3c61-497a-a9a6-947570ffabcd")
+	)
+	(wire
+		(pts
+			(xy 153.67 140.97) (xy 162.56 140.97)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e64e259f-da2a-497c-8aa4-e89ec8721685")
 	)
 	(wire
 		(pts
@@ -5838,7 +6042,7 @@
 	)
 	(global_label "Vcc"
 		(shape input)
-		(at 186.69 140.97 0)
+		(at 204.47 140.97 0)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -5848,7 +6052,7 @@
 		)
 		(uuid "4c8975b2-57b2-46bd-9b38-26188af7b72c")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 192.941 140.97 0)
+			(at 210.721 140.97 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7937,7 +8141,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 172.72 144.78 0)
+		(at 190.5 144.78 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -7946,7 +8150,7 @@
 		(fields_autoplaced yes)
 		(uuid "1d9c2091-804a-43d9-a5b3-fc2ff6afc405")
 		(property "Reference" "C16"
-			(at 176.53 143.5099 0)
+			(at 194.31 143.5099 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7955,7 +8159,7 @@
 			)
 		)
 		(property "Value" "10uF"
-			(at 176.53 146.0499 0)
+			(at 194.31 146.0499 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7964,7 +8168,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder"
-			(at 173.6852 148.59 0)
+			(at 191.4652 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7973,7 +8177,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 172.72 144.78 0)
+			(at 190.5 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7982,7 +8186,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 172.72 144.78 0)
+			(at 190.5 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9420,7 +9624,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 172.72 148.59 0)
+		(at 190.5 148.59 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -9429,7 +9633,7 @@
 		(fields_autoplaced yes)
 		(uuid "6103a937-3c04-43ea-8df4-1802a1ed97df")
 		(property "Reference" "#PWR050"
-			(at 172.72 154.94 0)
+			(at 190.5 154.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9438,7 +9642,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 172.72 153.67 0)
+			(at 190.5 153.67 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9446,7 +9650,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 172.72 148.59 0)
+			(at 190.5 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9455,7 +9659,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 172.72 148.59 0)
+			(at 190.5 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9464,7 +9668,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 172.72 148.59 0)
+			(at 190.5 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9893,7 +10097,7 @@
 	)
 	(symbol
 		(lib_id "PCM_4ms_Capacitor:100nF_0603_16V")
-		(at 161.29 144.78 180)
+		(at 179.07 144.78 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -9902,7 +10106,7 @@
 		(fields_autoplaced yes)
 		(uuid "721f1bda-4301-4b62-b1af-082bfd5db0be")
 		(property "Reference" "C15"
-			(at 163.83 143.5035 0)
+			(at 181.61 143.5035 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9911,7 +10115,7 @@
 			)
 		)
 		(property "Value" "100nF_0603_16V"
-			(at 161.29 148.59 0)
+			(at 179.07 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9920,7 +10124,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric"
-			(at 163.83 139.7 0)
+			(at 181.61 139.7 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9930,7 +10134,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 161.29 144.78 0)
+			(at 179.07 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9939,7 +10143,7 @@
 			)
 		)
 		(property "Description" "0.1uF, Min. 16V 10%, X7R or X5R or similar"
-			(at 161.29 144.78 0)
+			(at 179.07 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9948,7 +10152,7 @@
 			)
 		)
 		(property "Specifications" "0.1uF, Min. 16V 10%, X7R or X5R or similar"
-			(at 163.83 136.906 0)
+			(at 181.61 136.906 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9958,7 +10162,7 @@
 			)
 		)
 		(property "Manufacturer" "AVX Corporation"
-			(at 163.83 135.382 0)
+			(at 181.61 135.382 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9968,7 +10172,7 @@
 			)
 		)
 		(property "Part Number" "0603YC104KAT2A"
-			(at 163.83 133.858 0)
+			(at 181.61 133.858 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9978,7 +10182,7 @@
 			)
 		)
 		(property "Display" "0.1uF"
-			(at 163.83 146.0435 0)
+			(at 181.61 146.0435 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9987,7 +10191,7 @@
 			)
 		)
 		(property "JLCPCB ID" "C14663"
-			(at 160.02 132.08 0)
+			(at 177.8 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10351,7 +10555,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 161.29 148.59 0)
+		(at 179.07 148.59 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -10360,7 +10564,7 @@
 		(fields_autoplaced yes)
 		(uuid "84152364-f849-43ed-bee3-2406adfb6b83")
 		(property "Reference" "#PWR049"
-			(at 161.29 154.94 0)
+			(at 179.07 154.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10369,7 +10573,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 161.29 153.67 0)
+			(at 179.07 153.67 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10377,7 +10581,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 161.29 148.59 0)
+			(at 179.07 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10386,7 +10590,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 161.29 148.59 0)
+			(at 179.07 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10395,7 +10599,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 161.29 148.59 0)
+			(at 179.07 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12390,6 +12594,119 @@
 		)
 	)
 	(symbol
+		(lib_id "PCM_4ms_Regulator:Polyfuse_3A_15V")
+		(at 166.37 140.97 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "eac8d531-b94e-4719-a162-fcf8444f307f")
+		(property "Reference" "F1"
+			(at 166.116 145.288 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "1A_15V"
+			(at 166.116 147.828 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Fuse:Fuse_1812_4532Metric"
+			(at 182.88 147.32 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 166.37 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "3A trip, 1.5A hold Resettable fuse, polymeric positive temperature coefficient"
+			(at 166.37 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Specifications" "Itrip=3.0A, MaxV > 15V, 1812 package"
+			(at 179.07 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer" "LittleFuse"
+			(at 175.26 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Part Number" "miniSMDC150F/24"
+			(at 177.8 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLCPCB ID" "C207070 "
+			(at 186.69 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Part Number 2" "1812L150/16"
+			(at 184.15 139.7 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "59708614-5d9f-45d6-aef1-1a6c04fa3702")
+		)
+		(pin "2"
+			(uuid "ad5b5950-b0d1-4781-8189-b1360ca7420c")
+		)
+		(instances
+			(project "MC8P_MIDI_CONTROLLER"
+				(path "/42d00d8e-48e3-47e6-b456-ac5bd2d9bc78"
+					(reference "F1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 154.94 25.4 0)
 		(unit 1)
@@ -12522,7 +12839,7 @@
 	)
 	(symbol
 		(lib_id "PCM_Diode_Schottky_AKL:BAT43")
-		(at 182.88 140.97 0)
+		(at 200.66 140.97 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -12530,7 +12847,7 @@
 		(dnp no)
 		(uuid "f1379273-24a0-4767-b1d5-47812784829c")
 		(property "Reference" "D2"
-			(at 183.1975 134.62 0)
+			(at 200.9775 134.62 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12538,7 +12855,7 @@
 			)
 		)
 		(property "Value" "BAT43"
-			(at 183.1975 137.16 0)
+			(at 200.9775 137.16 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12546,7 +12863,7 @@
 			)
 		)
 		(property "Footprint" "Diode_SMD:D_SOD-123"
-			(at 183.388 131.572 0)
+			(at 201.168 131.572 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12555,7 +12872,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.tme.eu/Document/1036f59816f6cf6d50674da5bd8b8c1f/BAT42.pdf"
-			(at 182.88 140.97 0)
+			(at 200.66 140.97 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12564,7 +12881,7 @@
 			)
 		)
 		(property "Description" "DO-35 Schottky diode, 30V, 200mA, Alternate KiCAD Library"
-			(at 182.88 140.97 0)
+			(at 200.66 140.97 0)
 			(effects
 				(font
 					(size 1.27 1.27)
