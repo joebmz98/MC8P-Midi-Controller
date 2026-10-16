@@ -1,8 +1,9 @@
 // ********************* //
 // MC8P Standalone       //
 // MIDI Controller       //
-// firmware version 2.0  //
+// firmware version 2.2  //
 // Hardware Version: 1.0 //
+// powered by teensy 4.0 //
 // ********************* //
 // controller by         //
 // .axs instruments      //
@@ -63,42 +64,72 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);  //
 
 // -- FIRMWARE VERSION --
-const char* FIRMWARE_VERSION = "2.0";
+const char* FIRMWARE_VERSION = "2.2";
+
+// CC MESSAGE DIRECTION/CURVE
+enum CurveType {
+  CURVE_NOR = 0,  // Normal linear (0-127)
+  CURVE_INV = 1,  // Inverted linear (127-0)
+  CURVE_LOG = 2,  // Logarithmic (slow start, fast end)
+  CURVE_ILG = 3   // Inverse Logarithmic (fast start, slow end)
+};
 
 // STRUCTURE TO HOLD MULTIPLE MIDI MESSAGES PER POT
 struct MidiMessageParams {
   byte channel;
   byte cc;
-  bool inverted;  // true = inverted (127->0), false = normal (0->127)
-  byte minValue;  // Minimum value for CC range (0-127)
-  byte maxValue;  // Maximum value for CC range (0-127)
-  int value;      // Current stored value
+  CurveType curve;  // 0 = NOR // 1 = INV // 2 = LOG // 3 = ILG
+  byte minValue;    // Minimum value for CC range (0-127)
+  byte maxValue;    // Maximum value for CC range (0-127)
+  int value;        // Current stored value
 };
 
 // Helper function to map potentiometer value with range and direction
-int mapMidiValueWithParams(int rawValue, byte minVal, byte maxVal, bool inverted) {
-  // Convert raw potentiometer value (0-1023) to the specified range
-  int mappedValue;
+int mapMidiValueWithParams(int rawValue, byte minVal, byte maxVal, CurveType curve) {
+  // First, normalize the raw value to 0.0-1.0 range
+  float normalized = (float)rawValue / 1023.0;
 
-  // Handle the range (allow min > max for inverse mapping)
+  // Apply curve transformation
+  float transformed;
+
+  switch (curve) {
+    case CURVE_LOG:  // Logarithmic (slow start, fast end)
+      // Square the value for logarithmic feel (x^2)
+      // This gives fine control at low values and faster changes at high values
+      transformed = normalized * normalized;
+      break;
+
+    case CURVE_ILG:  // Inverse Logarithmic (fast start, slow end)
+      // Actually this should be: fast changes at low values, fine control at high values
+      // Formula: 1 - (1-x)² gives fast start, slow end
+      // But you want: slow descent that accelerates (fine at high, fast at low)
+      // So we use: 1 - x² (inverse of LOG)
+      transformed = 1.0 - (normalized * normalized);
+      break;
+
+    case CURVE_INV:  // Inverted linear
+      transformed = 1.0 - normalized;
+      break;
+
+    case CURVE_NOR:  // Normal linear
+      // Fall through to default
+    default:
+      transformed = normalized;
+      break;
+  }
+
+  // Map the transformed value (0.0-1.0) to the min-max range
+  int mappedValue;
   if (minVal <= maxVal) {
     // Normal range
-    mappedValue = map(rawValue, 0, 1023, minVal, maxVal);
+    mappedValue = minVal + (transformed * (maxVal - minVal));
   } else {
     // Inverted range (min > max)
-    mappedValue = map(rawValue, 0, 1023, maxVal, minVal);
+    mappedValue = maxVal + ((1.0 - transformed) * (minVal - maxVal));
   }
 
-  // Constrain to the valid range
+  // Constrain to valid range
   mappedValue = constrain(mappedValue, min(minVal, maxVal), max(minVal, maxVal));
-
-  // Apply direction inversion if needed
-  if (inverted) {
-    // Invert the value within the range
-    int rangeMin = min(minVal, maxVal);
-    int rangeMax = max(minVal, maxVal);
-    mappedValue = rangeMin + (rangeMax - mappedValue);
-  }
 
   return mappedValue;
 }
@@ -123,7 +154,8 @@ enum ScreenState { MAIN_SCREEN,
                    ABOUT_SCREEN,
                    RESET_SCREEN,
                    CONFIRM_ASSIGN_SAVE_SCREEN,
-                   CONFIRM_RESET_SCREEN };
+                   CONFIRM_RESET_SCREEN,
+                   SCENE_SCREEN };
 ScreenState currentScreen = MAIN_SCREEN;
 
 // ASSIGN SCREEN NAVIGATION STATES
@@ -146,11 +178,16 @@ int editPotSelection = 7;           // Default to pot 8 (index 7)
 bool editingAssignSetting = false;  // Flag for edit mode
 
 // DISPLAY SETTINGS
-bool displayInverted = false;        // Default: No
-bool editingDisplaySetting = false;  // Flag to indicate we're editing the value
-unsigned long editFlashTimer = 0;    // Timer for flashing effect
-bool flashState = false;             // Current flash state
-bool originalDisplayInverted;        // Store original value when entering edit mode
+#define NUM_THEMES 3  // 0 = MkII, 1 = MkI, 2 = YX
+bool displayInverted = false;
+bool editingDisplaySetting = false;
+unsigned long editFlashTimer = 0;
+bool flashState = false;
+bool originalDisplayInverted;
+uint8_t displayTheme = 1;  // 0 = MkII, 1 = MkI
+bool editingDisplayTheme = false;
+uint8_t originalDisplayTheme;
+
 
 // MENU NAVIGATION
 int selectedMenuItem = 0;  // 0: Assign, 1: States, 2: Settings
@@ -202,8 +239,7 @@ ResponsiveAnalogRead responsivePot[N_POTS] = {
 };
 
 // -- POT SELECTION AND EDITING
-int selectedPot = 0;  // Default to pot 0
-
+int selectedPot = 0;      // Default to pot 0
 int selectedMessage = 0;  //
 
 // TEMPORARY MIDI OVERRIDE SYSTEM
@@ -220,6 +256,47 @@ int catchUpStartPotPos[N_POTS] = { 0 };         // Pot position when catch-up st
 // Add this variable with your other global variables
 bool confirmAssignSave = true;  // Track Y/N selection for ASSIGN save confirmation
 
+// SCENE/PROJECT NAVIGATION FOR OP-XY
+int currentSceneValue = 0;    // MIDI value 0-98 for scenes (display shows +1)
+int sceneCC = 82;             // MIDI CC for scene selection (editable)
+int editingSceneCC = false;   // Flag for editing scene CC in Scene Mode
+int originalSceneCC = 82;     // Store original value when entering edit mode
+const int SCENE_CHANNEL = 1;  // MIDI channel for scene messages (adjust as needed)
+// SCENE CHANGE OVERLAY (YX theme)
+bool sceneChangeOverlayActive = false;
+unsigned long sceneChangeOverlayStart = 0;
+const unsigned long sceneChangeOverlayDuration = 600;  // ms
+
+// Scene Mode Navigation
+enum SceneNavigationMode { STEP_MODE,
+                           CUSTOM_MODE };
+SceneNavigationMode sceneMode = STEP_MODE;  // Default to STEP mode
+int editingSceneMode = false;               // Flag for editing scene mode
+int originalSceneMode = STEP_MODE;          // Store original mode when editing
+
+// Custom scene order (max 16 scenes)
+const int MAX_CUSTOM_SCENES = 12;
+int customSceneOrder[MAX_CUSTOM_SCENES] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };  // Default sequence
+int customSceneLength = 12;                                                          // Number of scenes in custom order (1-16)
+int editingCustomScene = false;                                                      // Flag for editing custom scenes
+int editingCustomSceneIndex = 0;                                                     // Which scene in custom order is being edited
+int customSceneEditPosition = 0;                                                     // Position in custom order being edited
+int originalCustomSceneValue = 0;                                                    // Store original value when editing custom scene
+int lastCustomSceneEditPosition = 0;                                                 // Store last selected step position
+
+// Scene screen navigation states
+enum SceneScreenEditMode {
+  SCENE_EDIT_NONE,
+  SCENE_EDIT_CC,
+  SCENE_EDIT_MODE,
+  SCENE_EDIT_CUSTOM_LENGTH,
+  SCENE_EDIT_CUSTOM_VALUE
+};
+
+SceneScreenEditMode sceneEditMode = SCENE_EDIT_NONE;
+int sceneSelectedParameter = 0;  // 0=CC, 1=Mode, 2=Custom (if in custom mode)
+bool selectingStep = false;      // True when navigating between sequence steps
+
 // EEPROM STRUCTURES
 // STRUCTURE TO SAVE MIDI CONFIGURATION TO EEPROM
 struct MidiSettings {
@@ -229,7 +306,7 @@ struct MidiSettings {
   struct SavedMidiMessage {
     byte channel;
     byte cc;
-    bool inverted;
+    CurveType curve;
     byte minValue;
     byte maxValue;
     int value;
@@ -242,11 +319,16 @@ struct GlobalSettings {
   uint8_t version;
   bool displayInverted;
   int editPot;
+  int sceneCC;
+  SceneNavigationMode sceneMode;
+  int customSceneLength;
+  int customSceneOrder[MAX_CUSTOM_SCENES];
+  uint8_t displayTheme;
 };
 
 // -- EEPROM VERSION
-#define SETTINGS_VERSION 2
-#define GLOBAL_SETTINGS_VERSION 2
+#define SETTINGS_VERSION 4
+#define GLOBAL_SETTINGS_VERSION 5
 
 // EEPROM address for global settings
 #define GLOBAL_EEPROM_ADDR (EEPROM_ADDR)
@@ -305,7 +387,8 @@ int scrollOffset = 0;                // Current scroll position
 
 // DISPLAY BITMAPS
 // MAIN_SCREEN
-static const unsigned char PROGMEM image_mainScreenInnerLines_bits[] = { 0x00, 0x00, 0x00, 0x02, 0x80, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x80, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x04, 0x40, 0x00, 0x00, 0x08, 0x80, 0x00, 0x00, 0x02, 0x20, 0x00, 0x00, 0x10, 0x7f, 0xff, 0xff, 0xf9, 0x3f, 0xff, 0xff, 0xf2, 0x7f, 0xff, 0xff, 0xfc, 0x9f, 0xff, 0xff, 0xe0, 0x80, 0x00, 0x00, 0x04, 0x40, 0x00, 0x00, 0x08, 0x80, 0x00, 0x00, 0x02, 0x20, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x03, 0x80, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x80, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x00 };
+static const unsigned char PROGMEM image_mainScreenInnerLines_bits[] = { 0x00, 0x00, 0x00, 0x02, 0x80, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x0f, 0x80, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x60, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x40, 0x10, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80, 0x08, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80, 0x08, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x80, 0x00, 0x01, 0x00, 0x04, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x04, 0x40, 0x00, 0x01, 0x00, 0x04, 0x00, 0x00, 0x02, 0x20, 0x00, 0x00, 0x10, 0x7f, 0xff, 0xff, 0xf9, 0x3f, 0xff, 0xff, 0x00, 0x07, 0xff, 0xff, 0xfc, 0x9f, 0xff, 0xff, 0xe0, 0x80, 0x00, 0x00, 0x04, 0x40, 0x00, 0x01, 0x00, 0x04, 0x00, 0x00, 0x02, 0x20, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x03, 0x80, 0x00, 0x01, 0x00, 0x04, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80, 0x08, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80, 0x08, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x40, 0x10, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x60, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x0f, 0x80, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x80, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x00 };
+
 // ASSIGN SCREEN
 static const unsigned char PROGMEM image_ctrlMessageIndicator_bits[] = { 0x20, 0x60, 0xe0, 0x60, 0x20 };
 static const unsigned char PROGMEM image_potMatrixGrid_bits[] = { 0x92, 0x40, 0x00, 0x00, 0x00, 0x00, 0x92, 0x40 };
@@ -317,6 +400,7 @@ bool confirmSelection = true;  // Track Y/N selection (true = Yes, false = No)
 
 int lastPot8Value = -1;
 unsigned long lastPot8ChangeTime = 0;
+
 
 // ***************************  //
 // SETUP
@@ -338,6 +422,7 @@ void setup() {
   // INITIALISE
   initController();
 }
+
 
 // *************************** //
 // MAIN
@@ -382,7 +467,7 @@ void loop() {
               int finalValue = mapMidiValueWithParams(tempMidiValues[i],
                                                       potMessages[i][j].minValue,
                                                       potMessages[i][j].maxValue,
-                                                      potMessages[i][j].inverted);
+                                                      potMessages[i][j].curve);
               // Check for OMNI channel
               if (potMessages[i][j].channel == 16) {  // OMNI
                 for (byte ch = 0; ch < 16; ch++) {
@@ -414,7 +499,7 @@ void loop() {
               if (abs(potMovement) > 20) {
                 // Calculate scaled MIDI value
                 int scaledMidiValue;
-                
+
                 if (potMovement > 0) {
                   // Moving forward from catch-up position
                   // Calculate target value between startValue and 127
@@ -447,7 +532,7 @@ void loop() {
                   int finalValue = mapMidiValueWithParams(scaledMidiValue,
                                                           potMessages[i][j].minValue,
                                                           potMessages[i][j].maxValue,
-                                                          potMessages[i][j].inverted);
+                                                          potMessages[i][j].curve);
                   potMessages[i][j].value = finalValue;
 
                   // Check for OMNI channel
@@ -468,7 +553,7 @@ void loop() {
                 // Check if we've reached the stored value to disable catch-up
                 int expectedMidiForPot = map(potState[i], 0, 1023, 0, 127);
                 int storedMidiValue = potMessages[i][0].value;
-                
+
                 // If pot position matches stored value within a reasonable range, disable catch-up
                 if (abs(expectedMidiForPot - storedMidiValue) < 10) {
                   catchUpActive[i] = false;
@@ -486,7 +571,7 @@ void loop() {
                   int finalValue = mapMidiValueWithParams(potMessages[i][j].value,
                                                           potMessages[i][j].minValue,
                                                           potMessages[i][j].maxValue,
-                                                          potMessages[i][j].inverted);
+                                                          potMessages[i][j].curve);
 
                   // Check for OMNI channel
                   if (potMessages[i][j].channel == 16) {  // OMNI
@@ -506,7 +591,7 @@ void loop() {
                 int finalValue = mapMidiValueWithParams(potState[i],  // Pass potState (0-1023) instead of currentMidiValue
                                                         potMessages[i][j].minValue,
                                                         potMessages[i][j].maxValue,
-                                                        potMessages[i][j].inverted);
+                                                        potMessages[i][j].curve);
                 potMessages[i][j].value = finalValue;
 
                 // Check for OMNI channel
@@ -571,8 +656,10 @@ void loop() {
     drawAssignScreen();
   } else if (currentScreen == SETTINGS_SCREEN) {
     drawSettingsMenuScreen();
-  } else if (currentScreen == ASSIGN_SETTINGS_SCREEN) {  // NEW
+  } else if (currentScreen == ASSIGN_SETTINGS_SCREEN) {
     drawAssignSettingsScreen();
+  } else if (currentScreen == SCENE_SCREEN) {
+    drawSceneScreen();
   } else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
     drawDisplaySettings();
   } else if (currentScreen == ABOUT_SCREEN) {
@@ -630,6 +717,35 @@ void readButtons() {
                 currentScreen = MENU_SCREEN;
                 selectedMenuItem = 0;  // Reset to first menu item
                 Serial.println("ASSIGN pressed - switching to MENU_SCREEN");
+              } else if (currentScreen == SCENE_SCREEN) {
+                // From SCENE_SCREEN, ASSIGN button cancels editing and reverts value
+                if (sceneEditMode != SCENE_EDIT_NONE) {
+                  // Revert to original value and exit edit mode
+                  if (sceneEditMode == SCENE_EDIT_CC) {
+                    sceneCC = originalSceneCC;
+                    Serial.print("Scene CC edit cancelled, reverted to: ");
+                    Serial.println(sceneCC);
+                  } else if (sceneEditMode == SCENE_EDIT_MODE) {
+                    sceneMode = originalSceneMode;
+                    Serial.print("Scene mode edit cancelled, reverted to: ");
+                    Serial.println(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
+                  } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH || sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
+                    // Reload custom scene data from EEPROM or revert
+                    Serial.println("Custom scene edit cancelled");
+                  }
+                  sceneEditMode = SCENE_EDIT_NONE;
+                  selectingStep = false;
+                  drawSceneScreen();
+                } else {
+                  // If not editing, save current step position before leaving
+                  if (sceneMode == CUSTOM_MODE && selectingStep) {
+                    lastCustomSceneEditPosition = customSceneEditPosition;
+                  }
+                  // If not editing, just go back to MENU_SCREEN
+                  currentScreen = MENU_SCREEN;
+                  selectedMenuItem = 1;  // Keep Scene Mode selected in menu
+                  Serial.println("ASSIGN pressed - returning to MENU_SCREEN from SCENE_SCREEN");
+                }
               } else if (currentScreen == MENU_SCREEN) {
                 // From MENU_SCREEN, ASSIGN button goes back to MAIN_SCREEN
                 currentScreen = MAIN_SCREEN;
@@ -680,22 +796,42 @@ void readButtons() {
               } else if (currentScreen == SETTINGS_SCREEN) {
                 // From SETTINGS_SCREEN, ASSIGN button goes back to MENU_SCREEN
                 currentScreen = MENU_SCREEN;
-                selectedMenuItem = 1;  // Keep Settings selected in menu
+                selectedMenuItem = 2;  // Keep Settings selected in menu
                 Serial.println("ASSIGN pressed - returning to MENU_SCREEN from SETTINGS_SCREEN");
               } else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
-                if (editingDisplaySetting) {
-                  // Exit edit mode without saving changes - revert to original value
-                  editingDisplaySetting = false;
-                  displayInverted = originalDisplayInverted;  // Revert to saved state
-                  Serial.print("ASSIGN pressed - exiting edit mode without saving, reverted to: ");
-                  Serial.println(displayInverted ? "YES" : "NO");
-                } else {
-                  // Save display settings before exiting
-                  saveGlobalSettingsToEEPROM();
-                  // From DISPLAY_SETTINGS_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
-                  currentScreen = SETTINGS_SCREEN;
-                  selectedMenuItem = 1;  // Keep Display selected in settings menu
-                  Serial.println("ASSIGN pressed - saving and returning to SETTINGS_SCREEN from DISPLAY_SETTINGS_SCREEN");
+                // Handle both Theme (0) and Invert (1) menu items
+                if (selectedMenuItem == 0) {
+                  // Theme menu item
+                  if (editingDisplayTheme) {
+                    // Exit theme edit mode without saving - revert to original
+                    editingDisplayTheme = false;
+                    displayTheme = originalDisplayTheme;
+                    Serial.print("ASSIGN pressed - exiting theme edit mode, reverted to: ");
+                    Serial.println(displayTheme == 0 ? "MkII" : (displayTheme == 1 ? "MkI" : "YX"));
+                  } else {
+                    // Save display settings before exiting
+                    saveGlobalSettingsToEEPROM();
+                    // From DISPLAY_SETTINGS_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
+                    currentScreen = SETTINGS_SCREEN;
+                    selectedMenuItem = 1;  // Keep Display selected in settings menu
+                    Serial.println("ASSIGN pressed - saving and returning to SETTINGS_SCREEN from DISPLAY_SETTINGS_SCREEN");
+                  }
+                } else if (selectedMenuItem == 1) {
+                  // Invert Display menu item
+                  if (editingDisplaySetting) {
+                    // Exit edit mode without saving changes - revert to original value
+                    editingDisplaySetting = false;
+                    displayInverted = originalDisplayInverted;  // Revert to saved state
+                    Serial.print("ASSIGN pressed - exiting invert edit mode, reverted to: ");
+                    Serial.println(displayInverted ? "YES" : "NO");
+                  } else {
+                    // Save display settings before exiting
+                    saveGlobalSettingsToEEPROM();
+                    // From DISPLAY_SETTINGS_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
+                    currentScreen = SETTINGS_SCREEN;
+                    selectedMenuItem = 1;  // Keep Display selected in settings menu
+                    Serial.println("ASSIGN pressed - saving and returning to SETTINGS_SCREEN from DISPLAY_SETTINGS_SCREEN");
+                  }
                 }
               } else if (currentScreen == ABOUT_SCREEN) {
                 // From ABOUT_SCREEN, ASSIGN button goes back to SETTINGS_SCREEN
@@ -733,7 +869,26 @@ void readButtons() {
                     assignEditingMode = false;
                     Serial.println("ENTER pressed - switching to ASSIGN_SCREEN");
                     break;
-                  case 1:  // Settings
+                  case 1:  // Scene Mode
+                    currentScreen = SCENE_SCREEN;
+                    sceneEditMode = SCENE_EDIT_NONE;  // Start in viewing mode
+                    sceneSelectedParameter = 0;       // Start with CC selected
+
+                    // Restore last step position if we were in step selection mode before
+                    if (sceneMode == CUSTOM_MODE) {
+                      customSceneEditPosition = lastCustomSceneEditPosition;
+                      // Validate the position is within bounds
+                      if (customSceneEditPosition >= customSceneLength) {
+                        customSceneEditPosition = customSceneLength - 1;
+                      }
+                      // Don't automatically enter step selection mode
+                      selectingStep = false;
+                    } else {
+                      selectingStep = false;
+                    }
+                    Serial.println("ENTER pressed - switching to SCENE_SCREEN");
+                    break;
+                  case 2:  // Settings
                     currentScreen = SETTINGS_SCREEN;
                     selectedMenuItem = 0;
                     Serial.println("ENTER pressed - switching to SETTINGS_SCREEN");
@@ -754,9 +909,13 @@ void readButtons() {
                     currentScreen = DISPLAY_SETTINGS_SCREEN;
                     selectedMenuItem = 0;                       // Reset selection for Display settings
                     editingDisplaySetting = false;              // Ensure not in edit mode when entering
+                    editingDisplayTheme = false;                // Ensure theme edit mode is off
                     originalDisplayInverted = displayInverted;  // Sync original with current
+                    originalDisplayTheme = displayTheme;        // Sync original theme with current
                     Serial.print("ENTER pressed - switching to DISPLAY_SETTINGS_SCREEN, current invert: ");
                     Serial.println(displayInverted ? "YES" : "NO");
+                    Serial.print("Current theme: ");
+                    Serial.println(displayTheme == 0 ? "MkII" : (displayTheme == 1 ? "MkI" : "YX"));
                     break;
                   case 2:  // About
                     currentScreen = ABOUT_SCREEN;
@@ -793,11 +952,33 @@ void readButtons() {
                 Serial.print(selectedMenuItem);
                 Serial.print(", editingDisplaySetting=");
                 Serial.print(editingDisplaySetting);
+                Serial.print(", editingDisplayTheme=");
+                Serial.print(editingDisplayTheme);
                 Serial.print(", displayInverted=");
                 Serial.println(displayInverted ? "YES" : "NO");
 
                 switch (selectedMenuItem) {
-                  case 0:  // Invert Display
+                  case 0:  // Theme
+                    if (!editingDisplayTheme) {
+                      // Store the current setting before entering edit mode
+                      originalDisplayTheme = displayTheme;
+                      // Enter edit mode
+                      editingDisplayTheme = true;
+                      editFlashTimer = millis();
+                      flashState = true;
+                      Serial.println("ENTER pressed - Theme EDIT MODE ACTIVATED");
+                      Serial.print("Original theme stored as: ");
+                      Serial.println(originalDisplayTheme == 0 ? "MkII" : (originalDisplayTheme == 1 ? "MkI" : "YX"));
+                    } else {
+                      // Exit edit mode and save setting
+                      editingDisplayTheme = false;
+                      Serial.print("ENTER pressed - Theme saved as: ");
+                      Serial.println(displayTheme == 0 ? "MkII" : (displayTheme == 1 ? "MkI" : "YX"));
+                      // Save to global EEPROM
+                      saveGlobalSettingsToEEPROM();
+                    }
+                    break;
+                  case 1:  // Invert Display
                     if (!editingDisplaySetting) {
                       // Store the current setting before entering edit mode
                       originalDisplayInverted = displayInverted;
@@ -805,7 +986,7 @@ void readButtons() {
                       editingDisplaySetting = true;
                       editFlashTimer = millis();
                       flashState = true;
-                      Serial.println("ENTER pressed - EDIT MODE ACTIVATED");
+                      Serial.println("ENTER pressed - Invert EDIT MODE ACTIVATED");
                       Serial.print("Original value stored as: ");
                       Serial.println(originalDisplayInverted ? "YES" : "NO");
                     } else {
@@ -816,6 +997,90 @@ void readButtons() {
                       saveGlobalSettingsToEEPROM();
                     }
                     break;
+                }
+              }
+
+              // SCENE SCREEN - Handle ENTER press
+              else if (currentScreen == SCENE_SCREEN) {
+                if (sceneEditMode != SCENE_EDIT_NONE) {
+                  // Exit edit mode and save
+                  if (sceneEditMode == SCENE_EDIT_CC) {
+                    saveGlobalSettingsToEEPROM();
+                    Serial.print("Scene CC saved as: ");
+                    Serial.println(sceneCC);
+                    // Keep focus on CC parameter after saving
+                    sceneSelectedParameter = 0;
+                  } else if (sceneEditMode == SCENE_EDIT_MODE) {
+                    saveGlobalSettingsToEEPROM();
+                    Serial.print("Scene mode saved as: ");
+                    Serial.println(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
+                    // Keep focus on Mode parameter after saving
+                    sceneSelectedParameter = 1;
+                  } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
+                    saveGlobalSettingsToEEPROM();
+                    Serial.print("Custom scene length saved as: ");
+                    Serial.println(customSceneLength);
+                    // Ensure currentSceneValue and edit position are within new bounds
+                    if (currentSceneValue >= customSceneLength) {
+                      currentSceneValue = customSceneLength - 1;
+                    }
+                    if (customSceneEditPosition >= customSceneLength) {
+                      customSceneEditPosition = customSceneLength - 1;
+                    }
+                    // Keep focus on Length parameter after saving
+                    sceneSelectedParameter = 2;
+                  } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
+                    saveGlobalSettingsToEEPROM();
+                    Serial.print("Custom scene order saved");
+                    // Keep focus on the sequence position after saving
+                    sceneSelectedParameter = 3;
+                    selectingStep = true;
+                  }
+                  sceneEditMode = SCENE_EDIT_NONE;
+                  // Don't reset selectingStep or sceneSelectedParameter here
+                  drawSceneScreen();
+                } else {
+                  // Enter edit mode based on selected parameter
+                  if (sceneMode == STEP_MODE) {
+                    // STEP mode only has CC and Mode
+                    switch (sceneSelectedParameter) {
+                      case 0:  // Scene CC
+                        originalSceneCC = sceneCC;
+                        sceneEditMode = SCENE_EDIT_CC;
+                        Serial.println("Scene CC - EDIT MODE ACTIVATED");
+                        break;
+                      case 1:  // Scene Mode
+                        originalSceneMode = sceneMode;
+                        sceneEditMode = SCENE_EDIT_MODE;
+                        Serial.println("Scene Mode - EDIT MODE ACTIVATED");
+                        break;
+                    }
+                  } else {
+                    // CUSTOM mode - handle all parameters
+                    if (sceneSelectedParameter == 3) {
+                      // Sequence position selected - enter value edit mode
+                      sceneEditMode = SCENE_EDIT_CUSTOM_VALUE;
+                      Serial.println("Custom Value - EDIT MODE ACTIVATED");
+                    } else {
+                      switch (sceneSelectedParameter) {
+                        case 0:  // Scene CC
+                          originalSceneCC = sceneCC;
+                          sceneEditMode = SCENE_EDIT_CC;
+                          Serial.println("Scene CC - EDIT MODE ACTIVATED");
+                          break;
+                        case 1:  // Scene Mode
+                          originalSceneMode = sceneMode;
+                          sceneEditMode = SCENE_EDIT_MODE;
+                          Serial.println("Scene Mode - EDIT MODE ACTIVATED");
+                          break;
+                        case 2:  // Custom Length
+                          sceneEditMode = SCENE_EDIT_CUSTOM_LENGTH;
+                          Serial.println("Custom Length - EDIT MODE ACTIVATED");
+                          break;
+                      }
+                    }
+                  }
+                  drawSceneScreen();
                 }
               }
 
@@ -944,14 +1209,139 @@ void readButtons() {
               prevButtonPressed = true;
 
               // *********************** //
+              // SCENE NAVIGATION ON MAIN_SCREEN
+              // *********************** //
+              if (currentScreen == MAIN_SCREEN && !tempOverrideActive) {
+                if (sceneMode == STEP_MODE) {
+                  if (currentSceneValue > 0) {
+                    currentSceneValue--;
+                    sendControlChange(sceneCC, currentSceneValue, SCENE_CHANNEL);
+                    Serial.print("Scene changed to: ");
+                    Serial.println(currentSceneValue + 1);
+                    triggerSceneOverlay();   // <-- YX theme overlay
+                    drawMainScreen();
+                  } else {
+                    Serial.println("Already at scene 1 - cannot decrease further");
+                  }
+                } else {  // CUSTOM_MODE
+                  if (currentSceneValue > 0) {
+                    currentSceneValue--;
+                    sendControlChange(sceneCC, customSceneOrder[currentSceneValue], SCENE_CHANNEL);
+                    Serial.print("Custom scene changed to position ");
+                    Serial.print(currentSceneValue + 1);
+                    Serial.print(" (value: ");
+                    Serial.print(customSceneOrder[currentSceneValue] + 1);
+                    Serial.println(")");
+                    triggerSceneOverlay();   // <-- YX theme overlay
+                    drawMainScreen();
+                  } else {
+                    Serial.println("Already at first custom scene - cannot decrease further");
+                  }
+                }
+              }
+
+              // *********************** //
+              // SCENE SCREEN NAVIGATION
+              // *********************** //
+              else if (currentScreen == SCENE_SCREEN) {
+                if (sceneEditMode == SCENE_EDIT_NONE) {
+                  // Check if we're in step selection mode (for CUSTOM mode)
+                  if (sceneMode == CUSTOM_MODE && selectingStep) {
+                    // Navigate between steps in the sequence
+                    if (customSceneEditPosition > 0) {
+                      customSceneEditPosition--;
+                      Serial.print("Selected step position: ");
+                      Serial.println(customSceneEditPosition + 1);
+                      drawSceneScreen();
+                    } else if (customSceneEditPosition == 0) {
+                      // At first step, move back to Length parameter
+                      selectingStep = false;
+                      sceneSelectedParameter = 2;  // Length parameter
+                      Serial.println("Moved back to Length parameter");
+                      drawSceneScreen();
+                    }
+                  } else {
+                    // Navigate between parameters
+                    if (sceneMode == STEP_MODE) {
+                      sceneSelectedParameter = (sceneSelectedParameter - 1 + 2) % 2;  // Only CC and Mode
+                      drawSceneScreen();
+                    } else {
+                      // CUSTOM mode parameter navigation
+                      if (sceneSelectedParameter == 0) {
+                        // At CC, go to sequence positions (last step)
+                        sceneSelectedParameter = 3;
+                        selectingStep = true;
+                        customSceneEditPosition = customSceneLength - 1;  // Start at last step
+                        Serial.println("Entered step selection mode at last step");
+                      } else if (sceneSelectedParameter == 3) {
+                        // At sequence positions, move to Length
+                        sceneSelectedParameter = 2;
+                        selectingStep = false;
+                        Serial.println("Moved to Length parameter");
+                      } else if (sceneSelectedParameter == 2) {
+                        // At Length, move to Mode
+                        sceneSelectedParameter = 1;
+                      } else if (sceneSelectedParameter == 1) {
+                        // At Mode, move to CC
+                        sceneSelectedParameter = 0;
+                      }
+                      drawSceneScreen();
+                    }
+                  }
+                } else if (sceneEditMode == SCENE_EDIT_CC) {
+                  // Decrease scene CC value
+                  if (sceneCC > 0) {
+                    sceneCC--;
+                    Serial.print("Scene CC decreased to: ");
+                    Serial.println(sceneCC);
+                    drawSceneScreen();
+                  }
+                } else if (sceneEditMode == SCENE_EDIT_MODE) {
+                  // Toggle between STEP and CUSTOM modes
+                  sceneMode = (sceneMode == STEP_MODE) ? CUSTOM_MODE : STEP_MODE;
+                  Serial.print("Scene mode toggled to: ");
+                  Serial.println(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
+                  // Reset selected parameter when switching modes
+                  sceneSelectedParameter = 0;
+                  selectingStep = false;
+                  drawSceneScreen();
+                } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
+                  // Decrease custom scene length
+                  if (customSceneLength > 1) {
+                    customSceneLength--;
+                    if (customSceneEditPosition >= customSceneLength) {
+                      customSceneEditPosition = customSceneLength - 1;
+                    }
+                    if (currentSceneValue >= customSceneLength) {
+                      currentSceneValue = customSceneLength - 1;
+                    }
+                    Serial.print("Custom scene length decreased to: ");
+                    Serial.println(customSceneLength);
+                    drawSceneScreen();
+                  }
+                } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
+                  // Decrease the scene value at current position
+                  if (customSceneOrder[customSceneEditPosition] > 0) {
+                    customSceneOrder[customSceneEditPosition]--;
+                    Serial.print("Custom scene at position ");
+                    Serial.print(customSceneEditPosition + 1);
+                    Serial.print(" set to: ");
+                    Serial.println(customSceneOrder[customSceneEditPosition] + 1);
+                    drawSceneScreen();
+                  }
+                }
+              }
+
+              // *********************** //
               // MENU SCREEN NAVIGATION
               // *********************** //
-              if (currentScreen == MENU_SCREEN) {
-                selectedMenuItem = (selectedMenuItem - 1 + 2) % 2;  // 2 menu items
+              else if (currentScreen == MENU_SCREEN) {
+                selectedMenuItem = (selectedMenuItem - 1 + 3) % 3;  // 3 menu items (CC assign, Scenes, Settings)
                 Serial.print("Menu selection: ");
                 switch (selectedMenuItem) {
                   case 0: Serial.println("CC assign"); break;
-                  case 1: Serial.println("Settings"); break;
+                  case 1: Serial.println("Scenes"); break;
+                  case 2: Serial.println("Settings"); break;
                 }
               }
 
@@ -986,13 +1376,22 @@ void readButtons() {
               else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
                 Serial.print("PREV on DISPLAY_SETTINGS_SCREEN, editingDisplaySetting=");
                 Serial.print(editingDisplaySetting);
-                Serial.print(", current displayInverted=");
-                Serial.println(displayInverted ? "YES" : "NO");
+                Serial.print(", editingDisplayTheme=");
+                Serial.print(editingDisplayTheme);
+                Serial.print(", selectedMenuItem=");
+                Serial.println(selectedMenuItem);
 
-                if (editingDisplaySetting) {
-                  // Force selectedMenuItem to 0 so the logic stays on this line
-                  selectedMenuItem = 0;
-
+                if (selectedMenuItem == 0 && editingDisplayTheme) {
+                  // Cycle theme backwards
+                  if (displayTheme > 0) {
+                    displayTheme--;
+                  } else {
+                    displayTheme = NUM_THEMES - 1;
+                  }
+                  Serial.print("PREV changed theme to: ");
+                  Serial.println(displayTheme == 0 ? "MkII" : (displayTheme == 1 ? "MkI" : "YX"));
+                  drawDisplaySettings();
+                } else if (selectedMenuItem == 1 && editingDisplaySetting) {
                   // Toggle the actual boolean that moves the box
                   bool oldValue = displayInverted;
                   displayInverted = !displayInverted;
@@ -1004,13 +1403,17 @@ void readButtons() {
                   Serial.print(oldValue ? "YES" : "NO");
                   Serial.print(" to ");
                   Serial.println(displayInverted ? "YES" : "NO");
+                  drawDisplaySettings();
                 } else {
-                  // Not in edit mode - pressing PREV should enter edit mode
-                  editingDisplaySetting = true;
-                  selectedMenuItem = 0;
-                  editFlashTimer = millis();
-                  flashState = true;
-                  Serial.println("PREV pressed - entering edit mode");
+                  // Not in edit mode - navigate between Theme (0) and Invert (1)
+                  if (selectedMenuItem == 0) {
+                    selectedMenuItem = 1;
+                  } else {
+                    selectedMenuItem = 0;
+                  }
+                  Serial.print("PREV navigated to menu item: ");
+                  Serial.println(selectedMenuItem);
+                  drawDisplaySettings();
                 }
               }
 
@@ -1067,10 +1470,25 @@ void readButtons() {
                       Serial.println(potMessages[selectedPot][selectedMessage].cc);
                       break;
                     case ASSIGN_EDIT_INVERT:
-                      potMessages[selectedPot][selectedMessage].inverted =
-                        !potMessages[selectedPot][selectedMessage].inverted;
-                      Serial.print("Direction set to: ");
-                      Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "Inverted" : "Normal");
+                      // Cycle backwards through curve types: NOR -> ILG -> LOG -> INV -> NOR
+                      switch (potMessages[selectedPot][selectedMessage].curve) {
+                        case CURVE_NOR:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_ILG;
+                          Serial.println("Curve set to: ILG");
+                          break;
+                        case CURVE_INV:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_NOR;
+                          Serial.println("Curve set to: NOR");
+                          break;
+                        case CURVE_LOG:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_INV;
+                          Serial.println("Curve set to: INV");
+                          break;
+                        case CURVE_ILG:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_LOG;
+                          Serial.println("Curve set to: LOG");
+                          break;
+                      }
                       break;
                     case ASSIGN_EDIT_MIN:
                       if (potMessages[selectedPot][selectedMessage].minValue > 0) {
@@ -1156,14 +1574,133 @@ void readButtons() {
               nextButtonPressed = true;
 
               // *********************** //
+              // SCENE NAVIGATION ON MAIN_SCREEN
+              // *********************** //
+              if (currentScreen == MAIN_SCREEN && !tempOverrideActive) {
+                if (sceneMode == STEP_MODE) {
+                  if (currentSceneValue < 98) {  // Maximum value 98 for 99 scenes
+                    currentSceneValue++;
+                    sendControlChange(sceneCC, currentSceneValue, SCENE_CHANNEL);
+                    Serial.print("Scene changed to: ");
+                    Serial.println(currentSceneValue + 1);
+                    triggerSceneOverlay();   // <-- YX theme overlay
+                    drawMainScreen();
+                  } else {
+                    Serial.println("Already at scene 99 - cannot increase further");
+                  }
+                } else {  // CUSTOM_MODE
+                  if (currentSceneValue < customSceneLength - 1) {
+                    currentSceneValue++;
+                    sendControlChange(sceneCC, customSceneOrder[currentSceneValue], SCENE_CHANNEL);
+                    Serial.print("Custom scene changed to position ");
+                    Serial.print(currentSceneValue + 1);
+                    Serial.print(" (value: ");
+                    Serial.print(customSceneOrder[currentSceneValue] + 1);
+                    Serial.println(")");
+                    triggerSceneOverlay();   // <-- YX theme overlay
+                    drawMainScreen();
+                  } else {
+                    Serial.println("Already at last custom scene - cannot increase further");
+                  }
+                }
+              }
+
+              // *********************** //
+              // SCENE SCREEN NAVIGATION
+              // *********************** //
+              else if (currentScreen == SCENE_SCREEN) {
+                if (sceneEditMode == SCENE_EDIT_NONE) {
+                  // Check if we're in step selection mode (for CUSTOM mode)
+                  if (sceneMode == CUSTOM_MODE && selectingStep) {
+                    // Navigate between steps in the sequence
+                    if (customSceneEditPosition < customSceneLength - 1) {
+                      customSceneEditPosition++;
+                      Serial.print("Selected step position: ");
+                      Serial.println(customSceneEditPosition + 1);
+                      drawSceneScreen();
+                    } else if (customSceneEditPosition == customSceneLength - 1) {
+                      // At last step, move to CC parameter
+                      selectingStep = false;
+                      sceneSelectedParameter = 0;  // CC parameter
+                      Serial.println("Moved to CC parameter");
+                      drawSceneScreen();
+                    }
+                  } else {
+                    // Navigate between parameters
+                    if (sceneMode == STEP_MODE) {
+                      sceneSelectedParameter = (sceneSelectedParameter + 1) % 2;  // Only CC and Mode
+                      drawSceneScreen();
+                    } else {
+                      // CUSTOM mode parameter navigation
+                      if (sceneSelectedParameter == 0) {
+                        // At CC, move to Mode
+                        sceneSelectedParameter = 1;
+                      } else if (sceneSelectedParameter == 1) {
+                        // At Mode, move to Length
+                        sceneSelectedParameter = 2;
+                      } else if (sceneSelectedParameter == 2) {
+                        // At Length, move to sequence positions (first step)
+                        sceneSelectedParameter = 3;
+                        selectingStep = true;
+                        customSceneEditPosition = 0;  // Start at first step
+                        Serial.println("Entered step selection mode at first step");
+                      } else if (sceneSelectedParameter == 3) {
+                        // At sequence positions, wrap to CC
+                        sceneSelectedParameter = 0;
+                        selectingStep = false;
+                        Serial.println("Moved to CC parameter");
+                      }
+                      drawSceneScreen();
+                    }
+                  }
+                } else if (sceneEditMode == SCENE_EDIT_CC) {
+                  // Increase scene CC value
+                  if (sceneCC < 127) {
+                    sceneCC++;
+                    Serial.print("Scene CC increased to: ");
+                    Serial.println(sceneCC);
+                    drawSceneScreen();
+                  }
+                } else if (sceneEditMode == SCENE_EDIT_MODE) {
+                  // Toggle between STEP and CUSTOM modes
+                  sceneMode = (sceneMode == STEP_MODE) ? CUSTOM_MODE : STEP_MODE;
+                  Serial.print("Scene mode toggled to: ");
+                  Serial.println(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
+                  // Reset selected parameter when switching modes
+                  sceneSelectedParameter = 0;
+                  selectingStep = false;
+                  drawSceneScreen();
+                } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
+                  // Increase custom scene length (max 12)
+                  if (customSceneLength < MAX_CUSTOM_SCENES) {
+                    customSceneLength++;
+                    Serial.print("Custom scene length increased to: ");
+                    Serial.println(customSceneLength);
+                    drawSceneScreen();
+                  }
+                } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
+                  // Increase the scene value at current position
+                  if (customSceneOrder[customSceneEditPosition] < 98) {
+                    customSceneOrder[customSceneEditPosition]++;
+                    Serial.print("Custom scene at position ");
+                    Serial.print(customSceneEditPosition + 1);
+                    Serial.print(" set to: ");
+                    Serial.println(customSceneOrder[customSceneEditPosition] + 1);
+                    drawSceneScreen();
+                  }
+                }
+              }
+
+              // *********************** //
               // MENU SCREEN NAVIGATION
               // *********************** //
-              if (currentScreen == MENU_SCREEN) {
-                selectedMenuItem = (selectedMenuItem + 1) % 2;  // 2 menu items
+              else if (currentScreen == MENU_SCREEN) {
+                selectedMenuItem = (selectedMenuItem + 1) % 3;  // 3 menu items (CC assign, Scenes, Settings)
                 Serial.print("Menu selection: ");
                 switch (selectedMenuItem) {
                   case 0: Serial.println("CC assign"); break;
-                  case 1: Serial.println("Settings"); break;
+                  case 1: Serial.println("Scenes"); break;
+                  case 2: Serial.println("Settings"); break;
                 }
               }
 
@@ -1196,10 +1733,20 @@ void readButtons() {
               // DISPLAY SETTINGS SCREEN NAVIGATION
               // *********************** //
               else if (currentScreen == DISPLAY_SETTINGS_SCREEN) {
-                if (editingDisplaySetting) {
-                  // Force selectedMenuItem to 0 so the logic stays on this line
-                  selectedMenuItem = 0;
+                Serial.print("NEXT on DISPLAY_SETTINGS_SCREEN, editingDisplaySetting=");
+                Serial.print(editingDisplaySetting);
+                Serial.print(", editingDisplayTheme=");
+                Serial.print(editingDisplayTheme);
+                Serial.print(", selectedMenuItem=");
+                Serial.println(selectedMenuItem);
 
+                if (selectedMenuItem == 0 && editingDisplayTheme) {
+                  // Cycle theme forwards
+                  displayTheme = (displayTheme + 1) % NUM_THEMES;
+                  Serial.print("NEXT changed theme to: ");
+                  Serial.println(displayTheme == 0 ? "MkII" : (displayTheme == 1 ? "MkI" : "YX"));
+                  drawDisplaySettings();
+                } else if (selectedMenuItem == 1 && editingDisplaySetting) {
                   // Toggle the actual boolean that moves the box
                   displayInverted = !displayInverted;
 
@@ -1208,13 +1755,17 @@ void readButtons() {
 
                   Serial.print("NEXT toggled displayInverted to: ");
                   Serial.println(displayInverted ? "YES" : "NO");
+                  drawDisplaySettings();
                 } else {
-                  // If not editing, make the first press enter edit mode
-                  editingDisplaySetting = true;
-                  selectedMenuItem = 0;
-                  editFlashTimer = millis();
-                  flashState = true;
-                  Serial.println("NEXT pressed - entering edit mode");
+                  // Not in edit mode - navigate between Theme (0) and Invert (1)
+                  if (selectedMenuItem == 0) {
+                    selectedMenuItem = 1;
+                  } else {
+                    selectedMenuItem = 0;
+                  }
+                  Serial.print("NEXT navigated to menu item: ");
+                  Serial.println(selectedMenuItem);
+                  drawDisplaySettings();
                 }
               }
 
@@ -1271,10 +1822,25 @@ void readButtons() {
                       Serial.println(potMessages[selectedPot][selectedMessage].cc);
                       break;
                     case ASSIGN_EDIT_INVERT:
-                      potMessages[selectedPot][selectedMessage].inverted =
-                        !potMessages[selectedPot][selectedMessage].inverted;
-                      Serial.print("Direction set to: ");
-                      Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "Inverted" : "Normal");
+                      // Cycle forward through curve types: NOR -> INV -> LOG -> ILG -> NOR
+                      switch (potMessages[selectedPot][selectedMessage].curve) {
+                        case CURVE_NOR:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_INV;
+                          Serial.println("Curve set to: INV");
+                          break;
+                        case CURVE_INV:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_LOG;
+                          Serial.println("Curve set to: LOG");
+                          break;
+                        case CURVE_LOG:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_ILG;
+                          Serial.println("Curve set to: ILG");
+                          break;
+                        case CURVE_ILG:
+                          potMessages[selectedPot][selectedMessage].curve = CURVE_NOR;
+                          Serial.println("Curve set to: NOR");
+                          break;
+                      }
                       break;
                     case ASSIGN_EDIT_MIN:
                       if (potMessages[selectedPot][selectedMessage].minValue < 127) {
@@ -1574,7 +2140,7 @@ void addMidiControl() {
   if (messageCount[selectedPot] < MAX_MESSAGES_PER_POT) {
     potMessages[selectedPot][messageCount[selectedPot]].channel = 0;
     potMessages[selectedPot][messageCount[selectedPot]].cc = 1;
-    potMessages[selectedPot][messageCount[selectedPot]].inverted = false;
+    potMessages[selectedPot][messageCount[selectedPot]].curve = CURVE_NOR;
     potMessages[selectedPot][messageCount[selectedPot]].minValue = 0;
     potMessages[selectedPot][messageCount[selectedPot]].maxValue = 127;
     potMessages[selectedPot][messageCount[selectedPot]].value = potState[selectedPot];
@@ -1634,6 +2200,49 @@ void removeMidiControl() {
 }
 
 // *********************** //
+// GET SCENE VALUE
+// *********************** //
+int getCurrentSceneMidiValue() {
+  if (sceneMode == STEP_MODE) {
+    return currentSceneValue;
+  } else {
+    // CUSTOM_MODE - return the custom scene value at current position
+    if (currentSceneValue >= 0 && currentSceneValue < customSceneLength) {
+      return customSceneOrder[currentSceneValue];
+    }
+    return 0;
+  }
+}
+
+// *********************** //
+// SET SCENE VALUE
+// *********************** //
+void setCurrentScene(int newValue) {
+  if (sceneMode == STEP_MODE) {
+    currentSceneValue = constrain(newValue, 0, 98);
+    sendControlChange(sceneCC, currentSceneValue, SCENE_CHANNEL);
+  } else {
+    // In custom mode, find the position of the scene value in custom order
+    for (int i = 0; i < customSceneLength; i++) {
+      if (customSceneOrder[i] == newValue) {
+        currentSceneValue = i;
+        sendControlChange(sceneCC, customSceneOrder[currentSceneValue], SCENE_CHANNEL);
+        return;
+      }
+    }
+    // If scene not found in custom order, don't change
+  }
+}
+
+// *********************** //
+// TRIGGER SCENE OVERLAY
+// *********************** //
+void triggerSceneOverlay() {
+  sceneChangeOverlayActive = true;
+  sceneChangeOverlayStart = millis();
+}
+
+// *********************** //
 // SAVE MIDI SETTINGS TO EEPROM
 // *********************** //
 void saveMidiSettingsToEEPROM() {
@@ -1646,7 +2255,7 @@ void saveMidiSettingsToEEPROM() {
     for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
       settings.potMessages[i][j].channel = potMessages[i][j].channel;
       settings.potMessages[i][j].cc = potMessages[i][j].cc;
-      settings.potMessages[i][j].inverted = potMessages[i][j].inverted;
+      settings.potMessages[i][j].curve = potMessages[i][j].curve;  // Changed from inverted
       settings.potMessages[i][j].minValue = potMessages[i][j].minValue;
       settings.potMessages[i][j].maxValue = potMessages[i][j].maxValue;
       settings.potMessages[i][j].value = potMessages[i][j].value;
@@ -1655,9 +2264,9 @@ void saveMidiSettingsToEEPROM() {
 
   // Write to EEPROM (Teensy writes are immediate, no commit needed)
   EEPROM.put(EEPROM_ADDR, settings);
-  
+
   Serial.println("MIDI settings saved to EEPROM");
-  
+
   // Debug output
   for (int i = 0; i < N_POTS; i++) {
     Serial.print("Pot ");
@@ -1687,41 +2296,47 @@ void loadMidiSettingsFromEEPROM() {
         Serial.print(i);
         Serial.println(" had invalid messageCount, reset to 1");
       }
-      
+
       for (int j = 0; j < MAX_MESSAGES_PER_POT; j++) {
         // Validate channel range (0-16 where 16 is OMNI)
         if (settings.potMessages[i][j].channel >= 0 && settings.potMessages[i][j].channel <= 16) {
           potMessages[i][j].channel = settings.potMessages[i][j].channel;
         } else {
-          potMessages[i][j].channel = (j == 0) ? i : 0; // Default for first message: pot channel, others: 0
+          potMessages[i][j].channel = (j == 0) ? i : 0;  // Default for first message: pot channel, others: 0
         }
-        
+
         // Validate CC range
         if (settings.potMessages[i][j].cc >= 0 && settings.potMessages[i][j].cc <= 127) {
           potMessages[i][j].cc = settings.potMessages[i][j].cc;
         } else {
-          potMessages[i][j].cc = (j == 0) ? 7 : 1; // Default for first message: CC7, others: CC1
+          potMessages[i][j].cc = (j == 0) ? 7 : 1;  // Default for first message: CC7, others: CC1
         }
-        
+
+        // Load curve type (validate range 0-3)
+        if (settings.potMessages[i][j].curve >= 0 && settings.potMessages[i][j].curve <= 3) {
+          potMessages[i][j].curve = settings.potMessages[i][j].curve;
+        } else {
+          potMessages[i][j].curve = CURVE_NOR;  // Default to NOR
+        }
+
         // Validate min/max range
         if (settings.potMessages[i][j].minValue >= 0 && settings.potMessages[i][j].minValue <= 127) {
           potMessages[i][j].minValue = settings.potMessages[i][j].minValue;
         } else {
           potMessages[i][j].minValue = 0;
         }
-        
+
         if (settings.potMessages[i][j].maxValue >= 0 && settings.potMessages[i][j].maxValue <= 127) {
           potMessages[i][j].maxValue = settings.potMessages[i][j].maxValue;
         } else {
           potMessages[i][j].maxValue = 127;
         }
-        
+
         // Ensure min <= max
         if (potMessages[i][j].minValue > potMessages[i][j].maxValue) {
           potMessages[i][j].maxValue = potMessages[i][j].minValue;
         }
-        
-        potMessages[i][j].inverted = settings.potMessages[i][j].inverted;
+
         potMessages[i][j].value = settings.potMessages[i][j].value;
       }
     }
@@ -1733,15 +2348,15 @@ void loadMidiSettingsFromEEPROM() {
       messageCount[i] = 1;
       potMessages[i][0].channel = i;
       potMessages[i][0].cc = 7;
-      potMessages[i][0].inverted = false;
+      potMessages[i][0].curve = CURVE_NOR;
       potMessages[i][0].minValue = 0;
       potMessages[i][0].maxValue = 127;
       potMessages[i][0].value = 0;
-      
+
       for (int j = 1; j < MAX_MESSAGES_PER_POT; j++) {
         potMessages[i][j].channel = 0;
         potMessages[i][j].cc = 0;
-        potMessages[i][j].inverted = false;
+        potMessages[i][j].curve = CURVE_NOR;
         potMessages[i][j].minValue = 0;
         potMessages[i][j].maxValue = 127;
         potMessages[i][j].value = 0;
@@ -1762,18 +2377,18 @@ void factoryReset() {
   // Reset all pots to default configuration
   for (int i = 0; i < N_POTS; i++) {
     messageCount[i] = 1;
-    potMessages[i][0].channel = i;        // Channel 1-8 (0-7 in code)
-    potMessages[i][0].cc = 7;             // CC 7
-    potMessages[i][0].inverted = false;   // Normal direction
-    potMessages[i][0].minValue = 0;       // Min value 0
-    potMessages[i][0].maxValue = 127;     // Max value 127
+    potMessages[i][0].channel = i;                  // Channel 1-8 (0-7 in code)
+    potMessages[i][0].cc = 7;                       // CC 7
+    potMessages[i][0].curve = CURVE_NOR;            // Normal direction
+    potMessages[i][0].minValue = 0;                 // Min value 0
+    potMessages[i][0].maxValue = 127;               // Max value 127
     potMessages[i][0].value = currentMidiValue[i];  // Current pot position
 
     // Clear any additional messages
     for (int j = 1; j < MAX_MESSAGES_PER_POT; j++) {
       potMessages[i][j].channel = 0;
       potMessages[i][j].cc = 0;
-      potMessages[i][j].inverted = false;
+      potMessages[i][j].curve = CURVE_NOR;
       potMessages[i][j].minValue = 0;
       potMessages[i][j].maxValue = 127;
       potMessages[i][j].value = 0;
@@ -1782,22 +2397,34 @@ void factoryReset() {
 
   // Reset display settings
   displayInverted = false;
-  
+  displayTheme = 1;
+
   // Reset edit pot selection
   editPotSelection = 7;
+
+  // Reset scene settings
+  sceneCC = 82;
+  sceneMode = STEP_MODE;
+  customSceneLength = 6;  // Set to 6 instead of 12
+  currentSceneValue = 0;
+
+  // Reset custom scene order
+  for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+    customSceneOrder[i] = i;
+  }
 
   // CRITICAL FIX: Force a complete EEPROM write with verified data
   // First, save MIDI settings
   saveMidiSettingsToEEPROM();
-  
+
   // Then save global settings
   saveGlobalSettingsToEEPROM();
-  
+
   // Verify the write by reading back immediately
   Serial.println("Verifying factory reset save...");
   MidiSettings verifySettings;
   EEPROM.get(EEPROM_ADDR, verifySettings);
-  
+
   if (verifySettings.signature == EEPROM_SIGNATURE) {
     Serial.println("MIDI settings verified successfully");
     for (int i = 0; i < N_POTS; i++) {
@@ -1821,6 +2448,7 @@ void factoryReset() {
 
   Serial.println("Factory reset completed!");
   Serial.println("All pots reset to: Channel 1-8, CC7, Range 0-127, Normal direction");
+  Serial.println("Scene settings reset: CC=82, Mode=STEP, Custom Length=6");
   Serial.println("=== FACTORY RESET COMPLETE ===");
 
   // Visual feedback
@@ -1840,7 +2468,16 @@ void saveGlobalSettingsToEEPROM() {
   settings.signature = EEPROM_SIGNATURE;
   settings.version = GLOBAL_SETTINGS_VERSION;
   settings.displayInverted = displayInverted;
+  settings.displayTheme = displayTheme;
   settings.editPot = editPotSelection;
+  settings.sceneCC = sceneCC;
+  settings.sceneMode = sceneMode;                  // Save scene mode
+  settings.customSceneLength = customSceneLength;  // Save custom length
+
+  // Save custom scene order
+  for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+    settings.customSceneOrder[i] = customSceneOrder[i];
+  }
 
   EEPROM.put(GLOBAL_EEPROM_ADDR, settings);
   Serial.println("Global settings saved to EEPROM");
@@ -1855,8 +2492,36 @@ void loadGlobalSettingsFromEEPROM() {
 
   if (settings.signature == EEPROM_SIGNATURE && settings.version == GLOBAL_SETTINGS_VERSION) {
     displayInverted = settings.displayInverted;
+    displayTheme = settings.displayTheme;
+    if (displayTheme >= NUM_THEMES) displayTheme = 0;
     editPotSelection = settings.editPot;
+    sceneCC = settings.sceneCC;
 
+    // Load scene settings
+    sceneMode = settings.sceneMode;
+    customSceneLength = settings.customSceneLength;
+
+    // Load custom scene order
+    for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+      customSceneOrder[i] = settings.customSceneOrder[i];
+    }
+
+    // Validate sceneMode
+    if (sceneMode != STEP_MODE && sceneMode != CUSTOM_MODE) {
+      sceneMode = STEP_MODE;  // Default to STEP mode if invalid
+    }
+
+    // Validate customSceneLength (1-12)
+    if (customSceneLength < 1 || customSceneLength > MAX_CUSTOM_SCENES) {
+      customSceneLength = 6;  // Default to 6 if invalid
+    }
+
+    // Validate sceneCC range
+    if (sceneCC < 0 || sceneCC > 127) {
+      sceneCC = 82;  // Default to CC 82 if invalid
+    }
+
+    // Validate editPotSelection
     if (editPotSelection < 0 || editPotSelection >= N_POTS) {
       editPotSelection = 7;
     }
@@ -1865,7 +2530,16 @@ void loadGlobalSettingsFromEEPROM() {
   } else {
     Serial.println("No valid global settings found, using defaults");
     displayInverted = false;
+    displayTheme = 0;
     editPotSelection = 7;
+    sceneCC = 82;
+    sceneMode = STEP_MODE;  // Default scene mode
+    customSceneLength = 6;  // Default custom scene length to 6
+
+    // Initialize default custom scene order
+    for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+      customSceneOrder[i] = i;
+    }
   }
 }
 
@@ -1926,7 +2600,7 @@ void initController() {
   display.display();
   delay(250);
 
-  // SECOND: Load global settings (display inversion and edit pot)
+  // SECOND: Load global settings (display inversion, edit pot, and scene settings)
   Serial.println("=== BOOTUP DEBUG ===");
   Serial.println("Loading global settings...");
   loadGlobalSettingsFromEEPROM();
@@ -1954,8 +2628,13 @@ void initController() {
       }
       Serial.print(", cc=");
       Serial.print(potMessages[i][0].cc);
-      Serial.print(", inverted=");
-      Serial.print(potMessages[i][0].inverted ? "YES" : "NO");
+      Serial.print(", curve=");
+      switch (potMessages[i][0].curve) {
+        case CURVE_NOR: Serial.print("NOR"); break;
+        case CURVE_INV: Serial.print("INV"); break;
+        case CURVE_LOG: Serial.print("LOG"); break;
+        case CURVE_ILG: Serial.print("ILG"); break;
+      }
       Serial.print(", min=");
       Serial.print(potMessages[i][0].minValue);
       Serial.print(", max=");
@@ -1988,7 +2667,7 @@ void initController() {
       messageCount[i] = 1;
       potMessages[i][0].channel = potChannels[i];
       potMessages[i][0].cc = potCCs[i];
-      potMessages[i][0].inverted = false;
+      potMessages[i][0].curve = CURVE_NOR;
       potMessages[i][0].minValue = 0;
       potMessages[i][0].maxValue = 127;
       potMessages[i][0].value = 0;
@@ -2024,7 +2703,7 @@ void initController() {
       int finalValue = mapMidiValueWithParams(currentMidiValue[i],
                                               potMessages[i][0].minValue,
                                               potMessages[i][0].maxValue,
-                                              potMessages[i][0].inverted);
+                                              potMessages[i][0].curve);
       potMessages[i][0].value = finalValue;
       Serial.print(" (stored value set to ");
       Serial.print(finalValue);
@@ -2046,7 +2725,7 @@ void initController() {
       int finalValue = mapMidiValueWithParams(potMessages[i][j].value,
                                               potMessages[i][j].minValue,
                                               potMessages[i][j].maxValue,
-                                              potMessages[i][j].inverted);
+                                              potMessages[i][j].curve);
 
       if (potMessages[i][j].channel == 16) {  // OMNI
         for (byte ch = 0; ch < 16; ch++) {
@@ -2064,8 +2743,14 @@ void initController() {
         Serial.print(potMessages[i][j].minValue);
         Serial.print("-");
         Serial.print(potMessages[i][j].maxValue);
-        Serial.print("], Dir=");
-        Serial.println(potMessages[i][j].inverted ? "INV" : "NOR");
+        Serial.print("], Curve=");
+        switch (potMessages[i][j].curve) {
+          case CURVE_NOR: Serial.print("NOR"); break;
+          case CURVE_INV: Serial.print("INV"); break;
+          case CURVE_LOG: Serial.print("LOG"); break;
+          case CURVE_ILG: Serial.print("ILG"); break;
+        }
+        Serial.println();
       } else {
         sendControlChange(potMessages[i][j].cc, finalValue, potMessages[i][j].channel + 1);
         Serial.print("Sent MIDI: Pot ");
@@ -2082,14 +2767,98 @@ void initController() {
         Serial.print(potMessages[i][j].minValue);
         Serial.print("-");
         Serial.print(potMessages[i][j].maxValue);
-        Serial.print("], Dir=");
-        Serial.println(potMessages[i][j].inverted ? "INV" : "NOR");
+        Serial.print("], Curve=");
+        switch (potMessages[i][j].curve) {
+          case CURVE_NOR: Serial.print("NOR"); break;
+          case CURVE_INV: Serial.print("INV"); break;
+          case CURVE_LOG: Serial.print("LOG"); break;
+          case CURVE_ILG: Serial.print("ILG"); break;
+        }
+        Serial.println();
       }
     }
   }
 
-  // Final loading bar completion
-  display.fillRoundRect(19, 40, 94, 4, 1, 0);
+  // SCENES/PROJECT INIT
+  // Note: currentSceneValue, sceneCC, sceneMode, customSceneLength, and customSceneOrder
+  // are already loaded from EEPROM in loadGlobalSettingsFromEEPROM()
+  // If this is a first boot or invalid values, they would have been set to defaults in loadGlobalSettingsFromEEPROM()
+
+  // Validate sceneCC range (0-127)
+  if (sceneCC < 0 || sceneCC > 127) {
+    sceneCC = 82;  // Default to CC 82 if invalid
+    Serial.println("Invalid sceneCC value detected, reset to 82");
+  }
+
+  // Validate sceneMode
+  if (sceneMode != STEP_MODE && sceneMode != CUSTOM_MODE) {
+    sceneMode = STEP_MODE;  // Default to STEP mode if invalid
+    Serial.println("Invalid sceneMode detected, reset to STEP_MODE");
+  }
+
+  // Validate customSceneLength (1-12)
+  if (customSceneLength < 1 || customSceneLength > MAX_CUSTOM_SCENES) {
+    customSceneLength = 6;  // Default to 6 if invalid
+    Serial.println("Invalid customSceneLength detected, reset to 6");
+  }
+
+  // Validate customSceneOrder array values
+  bool validOrder = true;
+  for (int i = 0; i < customSceneLength; i++) {
+    if (customSceneOrder[i] < 0 || customSceneOrder[i] > 98) {
+      validOrder = false;
+      break;
+    }
+  }
+  if (!validOrder) {
+    Serial.println("Invalid customSceneOrder detected, resetting to default sequence");
+    for (int i = 0; i < MAX_CUSTOM_SCENES; i++) {
+      customSceneOrder[i] = i;
+    }
+  }
+
+  // Validate currentSceneValue range (0-98 for 99 scenes, or within customSceneLength for custom mode)
+  if (sceneMode == STEP_MODE) {
+    if (currentSceneValue < 0 || currentSceneValue > 98) {
+      currentSceneValue = 0;  // Default to scene 1 if invalid
+      Serial.println("Invalid currentSceneValue detected, reset to 0 (Scene 1)");
+    }
+  } else {  // CUSTOM_MODE
+    if (currentSceneValue < 0 || currentSceneValue >= customSceneLength) {
+      currentSceneValue = 0;  // Default to first custom scene if invalid
+      Serial.println("Invalid currentSceneValue for custom mode, reset to 0");
+    }
+  }
+
+  // Send initial scene value to sync with OP-XY using the loaded sceneCC
+  int initialSceneValue;
+  if (sceneMode == STEP_MODE) {
+    initialSceneValue = currentSceneValue;
+  } else {
+    initialSceneValue = customSceneOrder[currentSceneValue];
+  }
+  sendControlChange(sceneCC, initialSceneValue, SCENE_CHANNEL);
+  Serial.print("Scene initialized with CC: ");
+  Serial.print(sceneCC);
+  Serial.print(", Mode: ");
+  Serial.print(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
+  Serial.print(", Value: ");
+  Serial.print(initialSceneValue);
+  Serial.print(" (Scene ");
+  Serial.print(initialSceneValue + 1);
+  Serial.println(")");
+
+  if (sceneMode == CUSTOM_MODE) {
+    Serial.print("Custom scene length: ");
+    Serial.print(customSceneLength);
+    Serial.print(", Sequence: ");
+    for (int i = 0; i < customSceneLength; i++) {
+      Serial.print(customSceneOrder[i] + 1);
+      if (i < customSceneLength - 1) Serial.print(", ");
+    }
+    Serial.println();
+  }
+
   display.display();
   delay(500);
 
@@ -2103,7 +2872,82 @@ void initController() {
 // HANDLE POT PARAMETER EDIT
 // *********************** //
 void handleParameterEditWithPot() {
-  // Only process when in assign screen and editing mode
+  // Handle scene screen editing
+  if (currentScreen == SCENE_SCREEN && sceneEditMode != SCENE_EDIT_NONE) {
+    // Read the selected edit potentiometer
+    int pot8Raw = analogRead(POT_PIN[editPotSelection]);
+
+    // Update responsive analog reading for smoother values
+    responsivePot[editPotSelection].update(pot8Raw);
+    int potValue = responsivePot[editPotSelection].getValue();
+
+    // Debounce: only process if value has changed significantly
+    if (abs(potValue - lastPot8Value) > 5) {
+      lastPot8Value = potValue;
+      lastPot8ChangeTime = millis();
+
+      bool valueChanged = false;
+
+      // Handle different edit modes
+      if (sceneEditMode == SCENE_EDIT_CC) {
+        // Map 0-1023 to 0-127 for CC value
+        int newCC = map(potValue, 0, 1023, 0, 127);
+        if (newCC != sceneCC) {
+          sceneCC = newCC;
+          valueChanged = true;
+          Serial.print("Scene CC adjusted to: ");
+          Serial.println(sceneCC);
+        }
+      } else if (sceneEditMode == SCENE_EDIT_MODE) {
+        // Map 0-1023 to 0-1 (STEP=0, CUSTOM=1)
+        int newMode = (potValue > 512) ? 1 : 0;
+        SceneNavigationMode newSceneMode = (newMode == 0) ? STEP_MODE : CUSTOM_MODE;
+        if (newSceneMode != sceneMode) {
+          sceneMode = newSceneMode;
+          valueChanged = true;
+          Serial.print("Scene mode changed to: ");
+          Serial.println(sceneMode == STEP_MODE ? "STEP" : "CUSTOM");
+          // Reset selected parameter when switching modes
+          sceneSelectedParameter = 0;
+        }
+      } else if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
+        // Map 0-1023 to 1-12 for custom length
+        int newLength = map(potValue, 0, 1023, 1, MAX_CUSTOM_SCENES);
+        if (newLength != customSceneLength) {
+          customSceneLength = newLength;
+          // Ensure currentSceneValue and edit position are within new bounds
+          if (currentSceneValue >= customSceneLength) {
+            currentSceneValue = customSceneLength - 1;
+          }
+          if (customSceneEditPosition >= customSceneLength) {
+            customSceneEditPosition = customSceneLength - 1;
+          }
+          valueChanged = true;
+          Serial.print("Custom scene length adjusted to: ");
+          Serial.println(customSceneLength);
+        }
+      } else if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE) {
+        // Map 0-1023 to 0-98 for scene value
+        int newValue = map(potValue, 0, 1023, 0, 98);
+        if (newValue != customSceneOrder[customSceneEditPosition]) {
+          customSceneOrder[customSceneEditPosition] = newValue;
+          valueChanged = true;
+          Serial.print("Custom scene at position ");
+          Serial.print(customSceneEditPosition + 1);
+          Serial.print(" adjusted to: ");
+          Serial.println(customSceneOrder[customSceneEditPosition] + 1);
+        }
+      }
+
+      // Force screen refresh if value changed
+      if (valueChanged) {
+        drawSceneScreen();
+      }
+    }
+    return;
+  }
+
+  // Only process assign screen editing
   if (currentScreen != ASSIGN_SCREEN || !assignEditingMode) {
     return;
   }
@@ -2190,14 +3034,19 @@ void handleParameterEditWithPot() {
 
       case ASSIGN_EDIT_INVERT:
         {
-          // Use potentiometer to toggle between NOR and INV
-          // Map to 0-1, with threshold at 512 (midpoint)
-          bool newInvert = (potValue > 512);
-          if (newInvert != potMessages[selectedPot][selectedMessage].inverted) {
-            potMessages[selectedPot][selectedMessage].inverted = newInvert;
+          // Map 0-1023 to 0-3 (four curve types)
+          int newCurve = map(potValue, 0, 1023, 0, 3);
+          CurveType newCurveType = (CurveType)newCurve;
+          if (newCurveType != potMessages[selectedPot][selectedMessage].curve) {
+            potMessages[selectedPot][selectedMessage].curve = newCurveType;
             valueChanged = true;
-            Serial.print("Direction set to: ");
-            Serial.println(potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR");
+            Serial.print("Curve set to: ");
+            switch (potMessages[selectedPot][selectedMessage].curve) {
+              case CURVE_NOR: Serial.println("NOR"); break;
+              case CURVE_INV: Serial.println("INV"); break;
+              case CURVE_LOG: Serial.println("LOG"); break;
+              case CURVE_ILG: Serial.println("ILG"); break;
+            }
           }
           break;
         }
@@ -2220,12 +3069,117 @@ void handleParameterEditWithPot() {
 // DRAW MAIN_SCREEN
 // *********************** //
 void drawMainScreen() {
+  if (displayTheme == 1) {
+    drawMainScreenMkI();  // Original MkI theme (circles)
+  } else if (displayTheme == 2) {
+    drawMainScreenYX();  // YX theme (rounded rectangles)
+  } else {
+    drawMainScreenMkII();  // MkII theme (vertical bars) — default
+  }
+}
 
-  display.clearDisplay();  // CLEAR
+// *********************** //
+// DRAW MAIN_SCREEN MKII (Vertical Bars)
+// *********************** //
+void drawMainScreenMkII() {
+  display.clearDisplay();
 
   // Set colors based on the inversion variable
-  int bgColor = displayInverted ? 0 : 1;   // Black if inverted, White if normal
-  int txtColor = displayInverted ? 1 : 0;  // White if inverted, Black if normal
+  int bgColor = displayInverted ? 0 : 1;
+  int txtColor = displayInverted ? 1 : 0;
+
+  display.fillRect(0, 0, 128, 64, bgColor);
+
+  // OUTER UI BORDER
+  display.drawRoundRect(1, 1, 126, 47, 3, txtColor);
+
+  // Draw vertical pot bars
+  for (int i = 0; i < N_POTS; i++) {
+    int height = getBarHeightFromMidi(i);
+    int xPos;
+
+    if (i < 4) {
+      xPos = 5 + (i * 15);
+    } else {
+      xPos = 66 + ((i - 4) * 15);
+    }
+
+    display.fillRoundRect(xPos, 44 - height, 12, height, 1, txtColor);
+  }
+
+  // SCENE LABEL AND VALUE
+  display.setFont(&Picopixel);
+  display.setTextColor(txtColor);
+  display.setTextSize(2);
+  display.setCursor(25, 59);
+  display.print("Scene");
+
+  int displaySceneValue;
+  if (sceneMode == STEP_MODE) {
+    displaySceneValue = currentSceneValue + 1;
+  } else {
+    displaySceneValue = (currentSceneValue >= 0 && currentSceneValue < customSceneLength)
+                          ? customSceneOrder[currentSceneValue] + 1
+                          : 1;
+  }
+
+  String sceneStr = (displaySceneValue < 10) ? "0" + String(displaySceneValue) : String(displaySceneValue);
+  display.setCursor(87, 59);
+  display.print(sceneStr);
+
+  display.display();
+}
+
+// *********************** //
+// BAR HEIGHT HELPER (for MkII theme)
+// *********************** //
+int getBarHeightFromMidi(int potIndex) {
+  int midiValue;
+
+  if (tempOverrideActive) {
+    // During temp override: show the temp-mapped value
+    midiValue = mapMidiValueWithParams(tempMidiValues[potIndex],
+                                       potMessages[potIndex][0].minValue,
+                                       potMessages[potIndex][0].maxValue,
+                                       potMessages[potIndex][0].curve);
+  } else {
+    // Normal & catch-up: show the stored MIDI value (what was actually sent)
+    midiValue = (messageCount[potIndex] > 0) ? potMessages[potIndex][0].value
+                                             : currentMidiValue[potIndex];
+  }
+
+  // Normalize to 0.0-1.0
+  float normalized = (float)midiValue / 127.0;
+
+  // Apply curve transformation
+  CurveType curve = CURVE_NOR;
+  if (messageCount[potIndex] > 0) {
+    curve = potMessages[potIndex][0].curve;
+  }
+
+  float transformed;
+  switch (curve) {
+    case CURVE_LOG: transformed = normalized * normalized; break;
+    case CURVE_ILG: transformed = 1.0 - ((1.0 - normalized) * (1.0 - normalized)); break;
+    case CURVE_INV: transformed = normalized; break;
+    default:        transformed = normalized; break;
+  }
+
+  // Map to 3..38 range
+  if (transformed <= 0.01) return 3;
+  if (transformed >= 0.99) return 38;
+  return 3 + (int)(transformed * 35);
+}
+
+// *********************** //
+// DRAW MAIN_SCREEN MKI (Original - Circles)
+// *********************** //
+void drawMainScreenMkI() {
+  display.clearDisplay();
+
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;
+  int txtColor = displayInverted ? 1 : 0;
 
   display.fillRect(0, 0, 128, 64, bgColor);
 
@@ -2235,6 +3189,7 @@ void drawMainScreen() {
 
   // POT INFO
   display.setTextColor(txtColor);
+  display.setTextSize(1);
   display.setTextWrap(false);
 
   // Draw all pot displays
@@ -2242,11 +3197,30 @@ void drawMainScreen() {
     drawPotDisplay(i);
   }
 
+  // SCENE/PROJECT NUMBER
+  display.setFont(&Picopixel);
+  display.setCursor(61, 33);
+
+  int displaySceneValue;
+  if (sceneMode == STEP_MODE) {
+    displaySceneValue = currentSceneValue + 1;
+  } else {
+    if (currentSceneValue >= 0 && currentSceneValue < customSceneLength) {
+      displaySceneValue = customSceneOrder[currentSceneValue] + 1;
+    } else {
+      displaySceneValue = 1;
+    }
+  }
+
+  if (displaySceneValue < 10) {
+    display.print("0");
+  }
+  display.print(displaySceneValue);
+
   display.display();
 }
-
 // *********************** //
-// DRAW POTENTIOMETERS ON MAIN_SCREEN
+// DRAW POTENTIOMETERS ON MAIN_SCREEN MKI
 // *********************** //
 void drawPotDisplay(int potIndex) {
   const int maxRadius = 5;
@@ -2267,11 +3241,11 @@ void drawPotDisplay(int potIndex) {
     // CRITICAL FIX: Map the raw pot value (0-1023) to MIDI range (0-127)
     // Use the same mapping as normal operation for consistent display
     if (messageCount[potIndex] > 0) {
-      // Apply range and direction to the raw potentiometer value (0-1023)
+      // Apply range and curve to the raw potentiometer value (0-1023)
       displayValue = mapMidiValueWithParams(tempMidiValues[potIndex],
                                             potMessages[potIndex][0].minValue,
                                             potMessages[potIndex][0].maxValue,
-                                            potMessages[potIndex][0].inverted);
+                                            potMessages[potIndex][0].curve);
     } else {
       // Fallback to simple mapping if no messages
       displayValue = map(tempMidiValues[potIndex], 0, 1023, 0, 127);
@@ -2323,7 +3297,149 @@ void drawPotDisplay(int potIndex) {
   display.setCursor(textX, (disp.textY - 1));
   display.print(valueStr);
 }
+// *********************** //
+// DRAW MAIN_SCREEN YX     //
+// *********************** //
+void drawMainScreenYX() {
+  display.clearDisplay();
 
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;
+  int txtColor = displayInverted ? 1 : 0;
+
+  // Fill the whole screen with background
+  display.fillRect(0, 0, 128, 64, bgColor);
+
+  // ============================================================
+  // 2 rows of 4 rounded rectangles.
+  // Row 1 (top):    Y = 1,  height 30, bottom edge at Y=31
+  // Row 2 (bottom): Y = 33, height 29, bottom edge at Y=62
+  // Columns:        X = 1, 33, 65, 96  (1px gap between)
+  // Widths:         30, 30, 30, 31     (fills to X=127)
+  // ============================================================
+
+  const int colX[4] = { 1, 33, 65, 96 };
+  const int colW[4] = { 30, 30, 30, 31 };
+  const int rowY[2] = { 1, 33 };
+  const int rowH[2] = { 30, 29 };
+  const int rowBottom[2] = { 31, 62 };  // bottom edge Y for each row
+
+  // Map pot index → (row, col):
+  //   Pots 0..3 → top row, columns 0..3
+  //   Pots 4..7 → bottom row, columns 0..3
+  for (int i = 0; i < N_POTS; i++) {
+    int row = (i < 4) ? 0 : 1;
+    int col = i % 4;
+
+    // Get the bar height (3..rowH[row] range, using the existing helper)
+    int barHeight = getBarHeightFromMidiYX(i);
+
+    // Clamp to row height
+    if (barHeight > rowH[row]) barHeight = rowH[row];
+    if (barHeight < 1) barHeight = 1;
+
+    // Rect grows from the bottom of its cell upward
+    int x = colX[col];
+    int w = colW[col];
+    int y = rowBottom[row] - barHeight;
+    int h = barHeight;
+
+    // Draw the filled rounded rect (radius 3, but clamp radius for small heights)
+    int r = 3;
+    if (r > w / 2) r = w / 2;
+    if (r > h / 2) r = h / 2;
+
+    display.fillRoundRect(x, y, w, h, r, txtColor);
+  }
+
+  // ============================================================
+  // SCENE CHANGE OVERLAY (temporary, middle of screen)
+  // ============================================================
+  if (sceneChangeOverlayActive) {
+    // Auto-expire the overlay
+    if (millis() - sceneChangeOverlayStart >= sceneChangeOverlayDuration) {
+      sceneChangeOverlayActive = false;
+    } else {
+      // Compute current scene value (1-based, leading zero for single digits)
+      int displaySceneValue;
+      if (sceneMode == STEP_MODE) {
+        displaySceneValue = currentSceneValue + 1;
+      } else {
+        displaySceneValue = (currentSceneValue >= 0 && currentSceneValue < customSceneLength)
+                              ? customSceneOrder[currentSceneValue] + 1
+                              : 1;
+      }
+      String sceneStr = (displaySceneValue < 10)
+                          ? "0" + String(displaySceneValue)
+                          : String(displaySceneValue);
+
+      // Box dimensions
+      const int boxW = 40;
+      const int boxH = 20;
+      const int boxX = (SCREEN_WIDTH - boxW) / 2;   // centered: 44
+      const int boxY = (SCREEN_HEIGHT - boxH) / 2;  // centered: 22
+
+      // Draw filled box (opposite of background so it stands out)
+      display.fillRoundRect(boxX, boxY, boxW, boxH, 4, txtColor);
+      display.drawRoundRect(boxX - 1, boxY - 1, boxW + 2, boxH + 2, 4, txtColor);
+
+      // Draw the scene number centered in the box, in bg color
+      display.setFont(&Picopixel);
+      display.setTextSize(2);
+      display.setTextColor(bgColor);
+      int16_t tx1, ty1;
+      uint16_t tw, th;
+      display.getTextBounds(sceneStr, 0, 0, &tx1, &ty1, &tw, &th);
+      int textX = boxX + (boxW - tw) / 2;
+      int textY = boxY + (boxH + th) / 2 - 2;
+      display.setCursor(textX, textY);
+      display.print(sceneStr);
+
+      // Restore text settings for the next frame
+      display.setTextSize(1);
+      display.setTextColor(txtColor);
+    }
+  }
+
+  display.display();
+}
+
+// *********************** //
+// BAR HEIGHT HELPER (for YX theme)
+// *********************** //
+int getBarHeightFromMidiYX(int potIndex) {
+  int midiValue;
+
+  if (tempOverrideActive) {
+    midiValue = mapMidiValueWithParams(tempMidiValues[potIndex],
+                                       potMessages[potIndex][0].minValue,
+                                       potMessages[potIndex][0].maxValue,
+                                       potMessages[potIndex][0].curve);
+  } else {
+    midiValue = (messageCount[potIndex] > 0) ? potMessages[potIndex][0].value
+                                             : currentMidiValue[potIndex];
+  }
+
+  float normalized = (float)midiValue / 127.0;
+
+  CurveType curve = CURVE_NOR;
+  if (messageCount[potIndex] > 0) {
+    curve = potMessages[potIndex][0].curve;
+  }
+
+  float transformed;
+  switch (curve) {
+    case CURVE_LOG: transformed = normalized * normalized; break;
+    case CURVE_ILG: transformed = 1.0 - ((1.0 - normalized) * (1.0 - normalized)); break;
+    case CURVE_INV: transformed = normalized; break;
+    default:        transformed = normalized; break;
+  }
+
+  // Map to 3..30 range
+  if (transformed <= 0.01) return 3;
+  if (transformed >= 0.99) return 30;
+  return 3 + (int)(transformed * 27);
+}
 // *********************** //
 // DRAW ASSIGN_SCREEN
 // *********************** //
@@ -2424,11 +3540,20 @@ void drawAssignScreen() {
       display.print(potMessages[selectedPot][messageIndex].maxValue);
       display.print(" | ");
 
-      // Show direction (NOR or INV)
-      if (potMessages[selectedPot][messageIndex].inverted) {
-        display.print("INV");
-      } else {
-        display.print("NOR");
+      // Show curve type (NOR, INV, LOG, ILG)
+      switch (potMessages[selectedPot][messageIndex].curve) {
+        case CURVE_NOR:
+          display.print("NOR");
+          break;
+        case CURVE_INV:
+          display.print("INV");
+          break;
+        case CURVE_LOG:
+          display.print("LOG");
+          break;
+        case CURVE_ILG:
+          display.print("ILG");
+          break;
       }
 
       // Show parameter edit indicator for selected message when in edit mode
@@ -2537,9 +3662,15 @@ void drawAssignScreen() {
               display.getTextBounds(prefix, 0, 0, &x1, &y1, &w, &h);
               editX = 8 + w;
 
-              // Get the direction string width
-              String dirStr = potMessages[selectedPot][selectedMessage].inverted ? "INV" : "NOR";
-              display.getTextBounds(dirStr, 0, 0, &x1, &y1, &w, &h);
+              // Get the curve string width
+              String curveStr;
+              switch (potMessages[selectedPot][selectedMessage].curve) {
+                case CURVE_NOR: curveStr = "NOR"; break;
+                case CURVE_INV: curveStr = "INV"; break;
+                case CURVE_LOG: curveStr = "LOG"; break;
+                case CURVE_ILG: curveStr = "ILG"; break;
+              }
+              display.getTextBounds(curveStr, 0, 0, &x1, &y1, &w, &h);
               parameterWidth = w;
               break;
             }
@@ -2571,10 +3702,11 @@ void drawAssignScreen() {
               display.print(potMessages[selectedPot][selectedMessage].maxValue);
               break;
             case ASSIGN_EDIT_INVERT:
-              if (potMessages[selectedPot][selectedMessage].inverted) {
-                display.print("INV");
-              } else {
-                display.print("NOR");
+              switch (potMessages[selectedPot][selectedMessage].curve) {
+                case CURVE_NOR: display.print("NOR"); break;
+                case CURVE_INV: display.print("INV"); break;
+                case CURVE_LOG: display.print("LOG"); break;
+                case CURVE_ILG: display.print("ILG"); break;
               }
               break;
           }
@@ -2706,18 +3838,212 @@ void drawMenuScreen() {
   display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
   display.setTextColor(txtColor);
+  display.setTextSize(1);
   display.setCursor(6, 11);
   display.println("Menu");
 
-  // MENU OPTIONS - Only 2 items
+  // MENU OPTIONS - Now 3 items
   display.setCursor(5, 25);
   display.println("- CC assign");
   display.setCursor(5, 35);
+  display.println("- Scenes");
+  display.setCursor(5, 45);
   display.println("- Settings");
 
   // Draw the bitmap indicator based on selection
   int indicatorY = 21 + (selectedMenuItem * 10);
   display.drawBitmap(55, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
+
+  display.display();
+}
+
+// *********************** //
+// DRAW SCENE SCREEN       //
+// *********************** //
+void drawSceneScreen() {
+  display.clearDisplay();
+
+  // Set colors based on the inversion variable
+  int bgColor = displayInverted ? 0 : 1;
+  int txtColor = displayInverted ? 1 : 0;
+
+  display.setFont(&Picopixel);
+
+  // DRAW UI
+  display.fillRect(0, 0, 128, 64, bgColor);
+  display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
+
+  display.setTextColor(txtColor);
+  display.setTextSize(1);
+  display.setCursor(6, 11);
+  display.println("Scenes");
+
+  // Only show bitmap indicator for non-sequence parameters (CC, Mode, Length)
+  // NOT when in edit mode
+  if (sceneEditMode == SCENE_EDIT_NONE) {
+    if (sceneMode == STEP_MODE) {
+      // STEP mode only has CC and Mode
+      if (sceneSelectedParameter < 2) {
+        int indicatorX = 100;
+        int indicatorY = 21 + (sceneSelectedParameter * 10);
+        display.drawBitmap(indicatorX, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
+      }
+    } else {
+      // CUSTOM mode - show indicator for CC, Mode, Length (but not for sequence values)
+      if (sceneSelectedParameter < 3) {
+        int indicatorX = 100;
+        int indicatorY = 21 + (sceneSelectedParameter * 10);
+        display.drawBitmap(indicatorX, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
+      }
+    }
+  }
+
+  // SCENE CC
+  display.setCursor(5, 25);
+  display.print("- Scene CC: ");
+
+  // Calculate box width based on sceneCC value length
+  int boxWidth;
+  if (sceneCC >= 100) {
+    boxWidth = 15;
+  } else if (sceneCC >= 10) {
+    boxWidth = 11;
+  } else {
+    boxWidth = 8;
+  }
+
+  int boxX = 66;
+  int boxY = 18;
+  int boxHeight = 11;
+
+  // Draw the CC value with editing indicator
+  if (sceneEditMode == SCENE_EDIT_CC) {
+    if ((millis() / 300) % 2 == 0) {
+      display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, txtColor);
+      display.setTextColor(bgColor);
+      display.setCursor(68, 25);
+      display.print(sceneCC);
+      display.setTextColor(txtColor);
+    } else {
+      display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, txtColor);
+      display.setCursor(68, 25);
+      display.print(sceneCC);
+    }
+  } else {
+    display.setCursor(68, 25);
+    display.print(sceneCC);
+  }
+
+  // SCENE MODE
+  display.setCursor(5, 35);
+  display.print("- Mode: ");
+
+  int modeBoxX = 66;
+  int modeBoxY = 28;
+  int modeBoxWidth = 30;
+
+  if (sceneEditMode == SCENE_EDIT_MODE) {
+    if ((millis() / 300) % 2 == 0) {
+      display.fillRoundRect(modeBoxX, modeBoxY, modeBoxWidth, boxHeight, 1, txtColor);
+      display.setTextColor(bgColor);
+      display.setCursor(68, 35);
+      if (sceneMode == STEP_MODE) {
+        display.print("STEP");
+      } else {
+        display.print("CUSTOM");
+      }
+      display.setTextColor(txtColor);
+    } else {
+      display.drawRoundRect(modeBoxX, modeBoxY, modeBoxWidth, boxHeight, 1, txtColor);
+      display.setCursor(68, 35);
+      if (sceneMode == STEP_MODE) {
+        display.print("STEP");
+      } else {
+        display.print("CUSTOM");
+      }
+    }
+  } else {
+    display.setCursor(68, 35);
+    if (sceneMode == STEP_MODE) {
+      display.print("STEP");
+    } else {
+      display.print("CUSTOM");
+    }
+  }
+
+  // Custom scene settings (only show in CUSTOM mode)
+  if (sceneMode == CUSTOM_MODE) {
+    // Custom scene length (max 12)
+    display.setCursor(5, 45);
+    display.print("- Length: ");
+
+    int lengthBoxX = 66;
+    int lengthBoxY = 38;
+    int lengthBoxWidth = 10;
+
+    if (sceneEditMode == SCENE_EDIT_CUSTOM_LENGTH) {
+      if ((millis() / 300) % 2 == 0) {
+        display.fillRoundRect(lengthBoxX, lengthBoxY, lengthBoxWidth, boxHeight, 1, txtColor);
+        display.setTextColor(bgColor);
+        display.setCursor(68, 45);
+        display.print(customSceneLength);
+        display.setTextColor(txtColor);
+      } else {
+        display.drawRoundRect(lengthBoxX, lengthBoxY, lengthBoxWidth, boxHeight, 1, txtColor);
+        display.setCursor(68, 45);
+        display.print(customSceneLength);
+      }
+    } else {
+      display.setCursor(68, 45);
+      display.print(customSceneLength);
+    }
+
+    // Display custom scene order horizontally
+    int startX = 5;
+    int startY = 55;
+    int spacing = 9;  // 9 pixels between each scene value
+
+    // Draw the scene sequence values horizontally
+    for (int i = 0; i < customSceneLength; i++) {
+      int xPos = startX + (i * spacing);
+
+      // Format the scene value (add leading zero for single digits)
+      String sceneValue;
+      if (customSceneOrder[i] + 1 < 10) {
+        sceneValue = "0" + String(customSceneOrder[i] + 1);
+      } else {
+        sceneValue = String(customSceneOrder[i] + 1);
+      }
+
+      // Draw a line above the currently selected sequence position (when not editing)
+      if (sceneEditMode == SCENE_EDIT_NONE && sceneSelectedParameter == 3 && customSceneEditPosition == i) {
+        // Draw line above the selected value
+        display.drawLine(xPos + 3, startY - 7, xPos + 3, startY - 6, txtColor);
+        display.drawLine(xPos + 3, startY + 2, xPos + 3, startY + 3, txtColor);
+      }
+
+      // If this position is being edited, highlight it with flashing box
+      if (sceneEditMode == SCENE_EDIT_CUSTOM_VALUE && customSceneEditPosition == i) {
+        if ((millis() / 300) % 2 == 0) {
+          // Draw filled background for the selected scene value
+          display.fillRect(xPos - 2, startY - 6, 10, 9, txtColor);
+          display.setTextColor(bgColor);
+          display.setCursor(xPos, startY);
+          display.print(sceneValue);
+          display.setTextColor(txtColor);
+        } else {
+          // Draw outline box for the selected scene value
+          display.drawRect(xPos - 2, startY - 6, 10, 9, txtColor);
+          display.setCursor(xPos, startY);
+          display.print(sceneValue);
+        }
+      } else {
+        // Normal display
+        display.setCursor(xPos, startY);
+        display.print(sceneValue);
+      }
+    }
+  }
 
   display.display();
 }
@@ -2824,6 +4150,7 @@ void drawSettingsMenuScreen() {
   display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
   display.setTextColor(txtColor);
+  display.setTextSize(1);
   display.setCursor(6, 11);
   display.println("Settings");
 
@@ -2899,103 +4226,132 @@ void drawAssignSettingsScreen() {
 // DRAW DISPLAY SETTINGS   //
 // *********************** //
 void drawDisplaySettings() {
-
-  display.clearDisplay();  // CLEAR
+  display.clearDisplay();
   display.setFont(&Picopixel);
+  display.setTextSize(1);
 
   // Set colors based on the inversion variable
-  int bgColor = displayInverted ? 0 : 1;   // Black if inverted, White if normal
-  int txtColor = displayInverted ? 1 : 0;  // White if inverted, Black if normal
-  int boxColor = txtColor;                 // Box border uses text color
+  int bgColor = displayInverted ? 0 : 1;
+  int txtColor = displayInverted ? 1 : 0;
 
   // DRAW UI
   display.fillRect(0, 0, 128, 64, bgColor);
   display.drawRoundRect(1, 1, 126, 62, 3, txtColor);
 
   display.setTextColor(txtColor);
+  display.setTextSize(1);
   display.setCursor(6, 11);
   display.println("Display settings");
 
   // MENU OPTIONS
   display.setCursor(5, 25);
+  display.println("- Theme");
+
+  display.setCursor(5, 35);
   display.println("- Invert Display");
 
-  // Display Y and N
-  display.setCursor(79, 25);
-  display.print("Y");
-  display.setCursor(91, 25);
-  display.print("N");
-
-  display.setCursor(85, 25);
-  display.print("/");
-
-  // Determine which box to draw and where
-  int boxX;
-  int boxY = 19;
-  int boxWidth;
-  int boxHeight = 9;
-
-  if (displayInverted) {
-    boxX = 77;  // Box over Y
-    boxWidth = 7;
+  // ============================================================
+  // THEME VALUE
+  // ============================================================
+  String themeStr;
+  if (displayTheme == 0) {
+    themeStr = "MkII";
+  } else if (displayTheme == 1) {
+    themeStr = "MkI";
+  } else if (displayTheme == 2) {
+    themeStr = "YX";
   } else {
-    boxX = 89;  // Box over N
-    boxWidth = 8;
+    themeStr = "???";
   }
 
-  // Draw the box around selected Y or N
-  if (editingDisplaySetting) {
-    // Flash the box when in edit mode
-    if (millis() - editFlashTimer > 300) {  // Flash every 300ms
-      flashState = !flashState;
-      editFlashTimer = millis();
-    }
+  // Measure theme text width
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds(themeStr, 0, 0, &x1, &y1, &w, &h);
 
-    if (flashState) {
-      // Draw filled box when flashing
-      display.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
-      // Draw the selected letter in contrasting color
-      display.setTextColor(bgColor);  // Switch to background color for the selected letter
-      if (displayInverted) {
-        display.setCursor(79, 25);
-        display.print("Y");
+  // Define a common RIGHT EDGE for both selection boxes
+  const int BOX_RIGHT_EDGE = 97;  // Shared right edge (adjust as needed)
+  const int BOX_H = 10;           // Shared box height
+  const int BOX_Y_THEME = 19;     // Y position of theme box
+  const int BOX_Y_INVERT = 29;    // Y position of invert box
+
+  // Theme box: right-aligned to shared edge
+  int themeBoxW = w + 4;
+  int themeBoxX = BOX_RIGHT_EDGE - themeBoxW;
+
+  // Theme text is centered inside its box (2px padding on each side)
+  int themeTextX = themeBoxX + 2;
+
+  // Draw theme text
+  display.setCursor(themeTextX, 25);
+  display.print(themeStr);
+
+  // ============================================================
+  // INVERT VALUE (Y or N) — box right-aligned to SAME shared edge
+  // ============================================================
+  String invertStr = displayInverted ? "Y" : "N";
+
+  // Measure invert text width so the box can wrap it
+  int16_t x1b, y1b;
+  uint16_t wb, hb;
+  display.getTextBounds(invertStr, 0, 0, &x1b, &y1b, &wb, &hb);
+
+  int invertBoxW = wb + 4;                       // Same padding as theme box
+  int invertBoxX = BOX_RIGHT_EDGE - invertBoxW;  // Right-aligned to shared edge
+  int invertTextX = invertBoxX + 2;
+
+  // Draw invert text
+  display.setCursor(invertTextX, 35);
+  display.print(invertStr);
+
+  // ============================================================
+  // DRAW SELECTION BOXES
+  // ============================================================
+  if (selectedMenuItem == 0) {
+    // Theme selected
+    if (editingDisplayTheme) {
+      if ((millis() / 300) % 2 == 0) {
+        // Flash: filled box
+        display.fillRoundRect(themeBoxX, BOX_Y_THEME, themeBoxW, BOX_H, 1, txtColor);
+        display.setTextColor(bgColor);
+        display.setCursor(themeTextX, 25);
+        display.print(themeStr);
         display.setTextColor(txtColor);
-        display.setCursor(91, 25);
-        display.print("N");
       } else {
-        display.setCursor(91, 25);
-        display.print("N");
-        display.setTextColor(txtColor);
-        display.setCursor(79, 25);
-        display.print("Y");
+        display.drawRoundRect(themeBoxX, BOX_Y_THEME, themeBoxW, BOX_H, 1, txtColor);
+        display.setCursor(themeTextX, 25);
+        display.print(themeStr);
       }
     } else {
-      // Draw outline box
-      display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
-      // Draw both letters in text color
-      display.setTextColor(txtColor);
-      display.setCursor(79, 25);
-      display.print("Y");
-      display.setCursor(91, 25);
-      display.print("N");
+      display.drawRoundRect(themeBoxX, BOX_Y_THEME, themeBoxW, BOX_H, 1, txtColor);
+      display.setCursor(themeTextX, 25);
+      display.print(themeStr);
     }
-  } else {
-    // Normal mode - just draw the outline box around selected option
-    display.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 1, boxColor);
-    // Draw both letters in text color
-    display.setTextColor(txtColor);
-    display.setCursor(79, 25);
-    display.print("Y");
-    display.setCursor(91, 25);
-    display.print("N");
+  } else if (selectedMenuItem == 1) {
+    // Invert Display selected
+    if (editingDisplaySetting) {
+      if ((millis() / 300) % 2 == 0) {
+        // Flash: filled box
+        display.fillRoundRect(invertBoxX, BOX_Y_INVERT, invertBoxW, BOX_H, 1, txtColor);
+        display.setTextColor(bgColor);
+        display.setCursor(invertTextX, 35);
+        display.print(invertStr);
+        display.setTextColor(txtColor);
+      } else {
+        display.drawRoundRect(invertBoxX, BOX_Y_INVERT, invertBoxW, BOX_H, 1, txtColor);
+        display.setCursor(invertTextX, 35);
+        display.print(invertStr);
+      }
+    } else {
+      display.drawRoundRect(invertBoxX, BOX_Y_INVERT, invertBoxW, BOX_H, 1, txtColor);
+      display.setCursor(invertTextX, 35);
+      display.print(invertStr);
+    }
   }
-
-  // Reset text color for the bitmap indicator
-  display.setTextColor(txtColor);
 
   // Draw the bitmap indicator based on selection
   int indicatorY = 21 + (selectedMenuItem * 10);
-  display.drawBitmap(100, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
+  display.drawBitmap(105, indicatorY, image_ctrlMessageIndicator_bits, 5, 5, txtColor);
 
   display.display();
 }
@@ -3028,7 +4384,7 @@ void drawAboutScreen() {
   display.print("8 pot open-source");
 
   display.setCursor(41, 25);
-  display.print("firmware v2.0");
+  display.print("firmware v2.2");
 
   display.setCursor(34, 57);
   display.print(".axs instruments");
